@@ -124,7 +124,7 @@ func dashCheck(pb []string) {
 		}
 	}
 	if count == 0 {
-		report("  no ellipsis suspects found in text.")
+		report("  no dash check suspects found in text.")
 	}
 }
 
@@ -362,10 +362,10 @@ func spacingCheck(wb []string) {
 	report("\n----- spacing pattern ---------------------------------------------------------\n")
 
 	consec := 0 // consecutive blank lines
-	re := regexp.MustCompile("11+1")
-	re3 := regexp.MustCompile("3")
-	re5 := regexp.MustCompile("5")
-	re411 := regexp.MustCompile("411")
+	re := regexp.MustCompile("11+1")  // many paragraphs separated by one line show as 1..1
+	re3 := regexp.MustCompile("3")		// flag unexpected vertical size breaks of 3
+	re5 := regexp.MustCompile("5")    // or 5 spaces
+	re411 := regexp.MustCompile("411")  // a sequence of four spaces shoud be 412 so flag 411
 	pbuf := ""
 	for _, line := range wb {
 		if line == "" {
@@ -389,7 +389,6 @@ func spacingCheck(wb []string) {
 					// add it to print buffer
 					pbuf = fmt.Sprintf("%s %s", pbuf, s)
 				}
-
 				s = "4"
 			} else {
 				if consec > 0 {
@@ -399,13 +398,13 @@ func spacingCheck(wb []string) {
 			consec = 0
 		}
 	}
-	s = pbuf + s
+	s = pbuf + " " + s
 	s = re411.ReplaceAllString(s, "[411]")
 	s = re.ReplaceAllString(s, "1..1")
 	s = re3.ReplaceAllString(s, "[3]")
 	s = re5.ReplaceAllString(s, "[5]")
 	if strings.ContainsAny(s, "[]") {
-		s += " <<"
+		s += " <<"  // show any line (chapter) with unexpected spacing
 		count++
 	}
 	report(s)

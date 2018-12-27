@@ -74,6 +74,9 @@ func main() {
 		models.Report = append(models.Report, fmt.Sprintf("command line: %s", os.Args))
 		models.Report = append(models.Report, fmt.Sprintf("executable is in: %s", loc_exec))
 		models.Report = append(models.Report, fmt.Sprintf("project is in: %s", loc_proj))
+	} else {
+		_, file := filepath.Split(p.Infile)
+		models.Report = append(models.Report, fmt.Sprintf("processing file: %s", file))
 	}
 
 	/*************************************************************************/
@@ -118,7 +121,7 @@ func main() {
 			models.Report = append(models.Report, fmt.Sprintf("good word list: %d words", len(models.Gwl)))
 			models.Wd = append(models.Wd, models.Gwl...) // add good_words into dictionary
 		} else { // it does not exist
-			models.Report = append(models.Report, fmt.Sprintf("no %s found in project directory", "good_words.txt"))
+			models.Report = append(models.Report, fmt.Sprintf("no %s found", "good_words.txt"))
 		}
 	}
 
@@ -185,10 +188,10 @@ func main() {
 		models.Report = append(models.Report, "")
 		models.Report = append(models.Report, "Smart Quote checks skipped")
 	} else {
-		t1 := time.Now()
+		// t1 := time.Now()
 		scan.Scan()
-		t2 := time.Now()
-		models.Report = append(models.Report, fmt.Sprintf("smart quote check took: %.2f seconds", t2.Sub(t1).Seconds()))
+		// t2 := time.Now()
+		// models.Report = append(models.Report, fmt.Sprintf("smart quote check took: %.2f seconds", t2.Sub(t1).Seconds()))
 	}
 
 	// spellcheck
@@ -205,10 +208,10 @@ func main() {
 		models.Report = append(models.Report, "")
 		models.Report = append(models.Report, "Levenshtein (edit-distance) checks skipped")
 	} else {
-		t1 := time.Now()
+		// t1 := time.Now()
 		leven.Levencheck(okwords, sw)
-		t2 := time.Now()
-		models.Report = append(models.Report, fmt.Sprintf("Levenshtein (edit-distance) checks took %.2f seconds", t2.Sub(t1).Seconds()))
+		// t2 := time.Now()
+		// models.Report = append(models.Report, fmt.Sprintf("Levenshtein (edit-distance) checks took %.2f seconds", t2.Sub(t1).Seconds()))
 	}
 
 	// text check
@@ -224,7 +227,10 @@ func main() {
 
 	models.Report = append(models.Report, "--------------------------------------------------------------------------------")
 	models.Report = append(models.Report, "run complete")
-	models.Report = append(models.Report, fmt.Sprintf("execution time: %s", time.Since(start)))
+	// models.Report = append(models.Report, fmt.Sprintf("execution time: %s", time.Since(start)))
+	t2 := time.Now()
+	models.Report = append(models.Report, fmt.Sprintf("execution time: %.2f seconds", t2.Sub(start).Seconds()))
+
 	fileio.SaveText(models.Report, p.Outfile, p.UseBOM, p.UseCRLF)
 
 	// remaining words in sw are suspects. conditionally generate a report

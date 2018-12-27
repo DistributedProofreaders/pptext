@@ -64,6 +64,7 @@ func Levencheck(okwords []string, suspects []string) {
 		m2 = append(m2, rtn)
 	}
 
+	nreports := 0
 	for _, suspect := range suspects {
 		for _, okword := range okwords {
 			if utf8.RuneCountInString(suspect) < 5 {
@@ -94,6 +95,7 @@ func Levencheck(okwords []string, suspects []string) {
 					}
 				}
 				rs = append(rs, fmt.Sprintf("%s(%d):%s(%d)", suspect, suspectwordcount, okword, okwordcount))
+				nreports++
 
 				// show one line in context
 				count := 0
@@ -120,5 +122,9 @@ func Levencheck(okwords []string, suspects []string) {
 		}
 	}
 
-	models.Report = append(models.Report, rs...)
+	models.Report = append(models.Report, rs...)  // text header
+	if (nreports == 0) {
+		models.Report = append(models.Report, "  no Levenshtein edit distance queries reported")
+	}
+	
 }
