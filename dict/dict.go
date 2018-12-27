@@ -11,8 +11,7 @@ import (
 
 var BOM = string([]byte{239, 187, 191}) // UTF-8 specific
 
-// dictionary word list in in pptext.dat bracketed by
-// *** BEGIN DICT *** and *** END DICT ***
+// dictionary word list 
 func ReadDict(infile string) []string {
 	file, err := os.Open(infile)
 	if err != nil {
@@ -21,19 +20,8 @@ func ReadDict(infile string) []string {
 	defer file.Close()
 	wd := []string{}
 	scanner := bufio.NewScanner(file)
-	keep := false
 	for scanner.Scan() {
-		if scanner.Text() == "*** BEGIN DICT ***" {
-			keep = true
-			continue
-		}
-		if scanner.Text() == "*** END DICT ***" {
-			keep = false
-			continue
-		}
-		if keep {
-			wd = append(wd, scanner.Text())
-		}
+		wd = append(wd, scanner.Text())
 	}
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)

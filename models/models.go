@@ -3,7 +3,7 @@ package models
 type Params struct {
 	Infile       string
 	Outfile      string
-	Datfile      string
+	Wlang        string
 	GWFilename   string
 	Experimental bool
 	Nolev		 bool

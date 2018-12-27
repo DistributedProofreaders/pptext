@@ -10,4 +10,4 @@ clean:
 
 up:
 	go build
-	cp pptext pptext.dat ~/projects/websites/rfrank.io/site
+	cp -r wordlists pptext pptext.dat ~/projects/websites/rfrank.io/site

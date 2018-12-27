@@ -37,10 +37,10 @@ func doParams() models.Params {
 	p := models.Params{}
 	flag.StringVar(&p.Infile, "i", "book-utf8.txt", "input file")
 	flag.StringVar(&p.Outfile, "o", "report.txt", "output report file")
-	flag.StringVar(&p.Datfile, "d", "", "data file")
+	flag.StringVar(&p.Wlang, "l", "master.en", "wordlist language")
 	flag.StringVar(&p.GWFilename, "g", "", "good words file")
 	flag.BoolVar(&p.Experimental, "x", false, "experimental (developers only)")
-	flag.BoolVar(&p.Nolev, "l", false, "do not run Levenshtein tests")
+	flag.BoolVar(&p.Nolev, "d", false, "do not run Levenshtein distance tests")
 	flag.BoolVar(&p.Nosqc, "q", false, "do not run smart quote checks")
 	flag.BoolVar(&p.UseBOM, "useBOM", true, "use BOM on text output")
 	flag.BoolVar(&p.UseCRLF, "useCRLF", true, "CRLF line endings on output")
@@ -78,85 +78,52 @@ func main() {
 
 	/*************************************************************************/
 	/* working dictionary (models.Wd)                                        */
-	/* create from words in dictionary (in pptext.dat file)                  */
-	/* and words from optional project-specific goodwords.txt file           */
+	/* create from words in dictionary in the language specified             */
+	/* and words from optional project-specific good_words.txt file          */
 	/* result are all known good words in a sorted list                      */
 	/*************************************************************************/
 
-	// default dictionary is in a pptext.dat file in either the program's
-	// directory or the current working directory (typ. the project directory)
+	// language-specific wordlists are in a subdirectory of the executable
 
-	haveDict := false
-	// if the user has used the -d option, it must be a complete path
-	if _, err := os.Stat(p.Datfile); !os.IsNotExist(err) {
-		// it exists with full path
-		models.Wd = dict.ReadDict(p.Datfile)
-		models.Swl = dict.ReadScannos(p.Datfile)
-		dict.ReadHeBe(p.Datfile)
-		if !strings.Contains(loc_exec, "www") {
-			models.Report = append(models.Report, fmt.Sprintf("datafile: %s", p.Datfile))
-		}
-		haveDict = true
-	}
-	// search in same folder as executable; if not there, search project folder
-	if !haveDict {
-		if _, err := os.Stat(filepath.Join(loc_exec, "pptext.dat")); !os.IsNotExist(err) {
-			// it exists
-			models.Wd = dict.ReadDict(filepath.Join(loc_exec, "pptext.dat"))
-			models.Swl = dict.ReadScannos(filepath.Join(loc_exec, "pptext.dat"))
-			dict.ReadHeBe(filepath.Join(loc_exec, "pptext.dat"))
-			if !strings.Contains(loc_exec, "www") {
-				models.Report = append(models.Report, fmt.Sprintf("datafile: %s", filepath.Join(loc_exec, "pptext.dat")))
-			}
-			haveDict = true
-		}
-	}
-	// search project folder for pptext.dat
-	if !haveDict {
-		if len(models.Wd) == 0 {
-			if _, err := os.Stat(filepath.Join(loc_proj, "pptext.dat")); !os.IsNotExist(err) {
-				// it exists
-				models.Wd = dict.ReadDict(filepath.Join(loc_proj, "pptext.dat"))
-				models.Swl = dict.ReadScannos(filepath.Join(loc_proj, "pptext.dat"))
-				dict.ReadHeBe(filepath.Join(loc_proj, "pptext.dat"))
-				if !strings.Contains(loc_exec, "www") {
-					models.Report = append(models.Report,
-						fmt.Sprintf("datafile: %s", filepath.Join(loc_proj, "pptext.dat")))
-				}
-			}
-		}
-	}
-	if len(models.Wd) == 0 {
-		models.Report = append(models.Report, fmt.Sprintf("no dictionary present"))
+	// if the user has used the -w option, a language file has been specified
+	// otherwise accept default
+	where := filepath.Join(loc_exec, "/wordlists/" + p.Wlang + ".txt")
+	fmt.Println(where)
+	if _, err := os.Stat(where); !os.IsNotExist(err) {
+		// it exists
+		models.Wd = dict.ReadDict(where)
+		models.Report = append(models.Report, fmt.Sprintf("using wordlist: %s (%d words)", p.Wlang, len(models.Wd)))
 	} else {
-		models.Report = append(models.Report, fmt.Sprintf("dictionary present: %d words", len(models.Wd)))
+		models.Report = append(models.Report, fmt.Sprintf("no dictionary present"))
 	}
+
+	// require a pptext.dat file holding scannos list and jeebies he/be lists
+	models.Swl = dict.ReadScannos(filepath.Join(loc_exec, "pptext.dat"))
+	dict.ReadHeBe(filepath.Join(loc_exec, "pptext.dat"))
 
 	// now the good word list.
-	// by default it is named goodwords.txt and is in the project folder (current working directory)
+	// by default it is named good_words.txt and is in the project folder (current working directory)
 	// user can override by specifying a complete path to the -g option
 	if len(p.GWFilename) > 0 { // a good word list was specified
 		if _, err := os.Stat(p.GWFilename); !os.IsNotExist(err) { // it exists
 			models.Gwl = dict.ReadWordList(p.GWFilename)
 			models.Report = append(models.Report, fmt.Sprintf("good word list: %d words", len(models.Gwl)))
-			models.Wd = append(models.Wd, models.Gwl...) // add goodwords into dictionary
+			models.Wd = append(models.Wd, models.Gwl...) // add good_words into dictionary
 		} else { // it does not exist
 			models.Report = append(models.Report, fmt.Sprintf("no %s found", p.GWFilename))
 		}
-	} else { // no full path goodwords.txt file was specified. if it exists, it's in the loc_proj
-		if _, err := os.Stat(filepath.Join(loc_proj, "goodwords.txt")); !os.IsNotExist(err) {
-			models.Gwl = dict.ReadWordList(filepath.Join(loc_proj, "goodwords.txt"))
+	} else { // no full path good_words.txt file was specified. if it exists, it's in the loc_proj
+		if _, err := os.Stat(filepath.Join(loc_proj, "good_words.txt")); !os.IsNotExist(err) {
+			models.Gwl = dict.ReadWordList(filepath.Join(loc_proj, "good_words.txt"))
 			models.Report = append(models.Report, fmt.Sprintf("good word list: %d words", len(models.Gwl)))
-			models.Wd = append(models.Wd, models.Gwl...) // add goodwords into dictionary
+			models.Wd = append(models.Wd, models.Gwl...) // add good_words into dictionary
 		} else { // it does not exist
-			models.Report = append(models.Report, fmt.Sprintf("no %s found in project directory", "goodwords.txt"))
+			models.Report = append(models.Report, fmt.Sprintf("no %s found in project directory", "good_words.txt"))
 		}
 	}
 
 	// need the words in a sorted list for binary search later
-	if len(models.Gwl) > 0 {
-		sort.Strings(models.Wd) // appended wordlist needs sorting
-	}
+	sort.Strings(models.Wd)
 
 	/*************************************************************************/
 	/* line word list                                                        */
