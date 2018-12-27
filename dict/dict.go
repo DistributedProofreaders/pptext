@@ -11,7 +11,7 @@ import (
 
 var BOM = string([]byte{239, 187, 191}) // UTF-8 specific
 
-// dictionary word list 
+// dictionary word list
 func ReadDict(infile string) []string {
 	file, err := os.Open(infile)
 	if err != nil {

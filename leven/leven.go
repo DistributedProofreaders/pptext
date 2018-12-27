@@ -79,7 +79,7 @@ func Levencheck(okwords []string, suspects []string) {
 			}
 			if strings.ToLower(suspect+"s") == strings.ToLower(okword) {
 				continue
-			}						
+			}
 			dist := Levenshtein([]rune(suspect), []rune(okword))
 			if dist < 2 {
 				// get counts
@@ -122,9 +122,9 @@ func Levencheck(okwords []string, suspects []string) {
 		}
 	}
 
-	models.Report = append(models.Report, rs...)  // text header
-	if (nreports == 0) {
+	models.Report = append(models.Report, rs...) // text header
+	if nreports == 0 {
 		models.Report = append(models.Report, "  no Levenshtein edit distance queries reported")
 	}
-	
+
 }

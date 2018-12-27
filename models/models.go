@@ -6,7 +6,7 @@ type Params struct {
 	Wlang        string
 	GWFilename   string
 	Experimental bool
-	Nolev		 bool
+	Nolev        bool
 	Nosqc        bool
 	UseBOM       bool
 	UseCRLF      bool

@@ -90,7 +90,7 @@ func main() {
 
 	// if the user has used the -w option, a language file has been specified
 	// otherwise accept default
-	where := filepath.Join(loc_exec, "/wordlists/" + p.Wlang + ".txt")
+	where := filepath.Join(loc_exec, "/wordlists/"+p.Wlang+".txt")
 	fmt.Println(where)
 	if _, err := os.Stat(where); !os.IsNotExist(err) {
 		// it exists

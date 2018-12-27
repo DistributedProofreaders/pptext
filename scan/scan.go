@@ -339,10 +339,9 @@ func doScan() {
 				s2 += string(r)
 				p = p[size:]
 			}
-			
+
 			report(fmt.Sprintf("%s\n  %s\n", query[0], s2))
 
-			
 			// report(fmt.Sprintf("%s\n  %s\n", query[0], p))
 			nreports++
 		}

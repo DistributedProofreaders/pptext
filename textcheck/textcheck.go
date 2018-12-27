@@ -361,11 +361,11 @@ func spacingCheck(wb []string) {
 	count := 0
 	report("\n----- spacing pattern ---------------------------------------------------------\n")
 
-	consec := 0 // consecutive blank lines
-	re := regexp.MustCompile("11+1")  // many paragraphs separated by one line show as 1..1
-	re3 := regexp.MustCompile("3")		// flag unexpected vertical size breaks of 3
-	re5 := regexp.MustCompile("5")    // or 5 spaces
-	re411 := regexp.MustCompile("411")  // a sequence of four spaces shoud be 412 so flag 411
+	consec := 0                        // consecutive blank lines
+	re := regexp.MustCompile("11+1")   // many paragraphs separated by one line show as 1..1
+	re3 := regexp.MustCompile("3")     // flag unexpected vertical size breaks of 3
+	re5 := regexp.MustCompile("5")     // or 5 spaces
+	re411 := regexp.MustCompile("411") // a sequence of four spaces shoud be 412 so flag 411
 	pbuf := ""
 	for _, line := range wb {
 		if line == "" {
@@ -404,7 +404,7 @@ func spacingCheck(wb []string) {
 	s = re3.ReplaceAllString(s, "[3]")
 	s = re5.ReplaceAllString(s, "[5]")
 	if strings.ContainsAny(s, "[]") {
-		s += " <<"  // show any line (chapter) with unexpected spacing
+		s += " <<" // show any line (chapter) with unexpected spacing
 		count++
 	}
 	report(s)
