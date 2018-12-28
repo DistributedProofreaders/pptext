@@ -556,27 +556,6 @@ func paraLevel() {
 	}
 
 	// ------------------------------------------------------------------------
-	// check: paragraph ends with comma
-
-	re = regexp.MustCompile(`,$`)
-	sscnt = 0
-	for _, para := range models.Pb {
-		if re.MatchString(para) {
-			if sscnt == 0 {
-				report("  paragraph ends with comma")
-				count++
-			}
-			sscnt++
-			if sscnt < RLIMIT {
-				report("    " + util.GetParaSeg(para, len(para)-1))
-			}
-		}
-	}
-	if sscnt > RLIMIT {
-		report(fmt.Sprintf("    ...%d more", sscnt-RLIMIT))
-	}
-
-	// ------------------------------------------------------------------------
 	// check: full stop (period) with the following word starting with
 	// a lower case character.
 	// allow exceptions
@@ -773,7 +752,7 @@ func paraLevel() {
 			}
 			sscnt++
 			if sscnt < RLIMIT {
-				report("    ..." + util.GetParaSeg(para, len(para)-1))
+				report("    ..." + util.GetParaSeg(para, -1))  // show paragraph end
 			}
 		}
 	}

@@ -29,7 +29,6 @@ import (
 
 // const VERSION string = "0.90"
 
-var p models.Params
 var wlm []string // suspect words returned as list by spellcheck
 var sw []string  // suspect words list
 
@@ -55,14 +54,14 @@ func main() {
 	models.Report = append(models.Report, fmt.Sprintf("* %76s *", "started "+time.Now().Format(time.RFC850)))
 	models.Report = append(models.Report, fmt.Sprintf("********************************************************************************"))
 
-	p = doParams() // parse command line parameters
+	models.P = doParams() // parse command line parameters
 
 	/*************************************************************************/
 	/* working buffer (saved in models)                                      */
 	/* user-supplied source file UTF-8 encoded                               */
 	/*************************************************************************/
 
-	models.Wb = fileio.ReadText(p.Infile) // working buffer, line by line
+	models.Wb = fileio.ReadText(models.P.Infile) // working buffer, line by line
 
 	// location of executable and user's working directory
 	execut, _ := os.Executable()
@@ -75,7 +74,7 @@ func main() {
 		models.Report = append(models.Report, fmt.Sprintf("executable is in: %s", loc_exec))
 		models.Report = append(models.Report, fmt.Sprintf("project is in: %s", loc_proj))
 	} else {
-		_, file := filepath.Split(p.Infile)
+		_, file := filepath.Split(models.P.Infile)
 		models.Report = append(models.Report, fmt.Sprintf("processing file: %s", file))
 	}
 
@@ -90,12 +89,12 @@ func main() {
 
 	// if the user has used the -w option, a language file has been specified
 	// otherwise accept default
-	where := filepath.Join(loc_exec, "/wordlists/"+p.Wlang+".txt")
-	fmt.Println(where)
+	where := filepath.Join(loc_exec, "/wordlists/"+models.P.Wlang+".txt")
+	// fmt.Println(where)
 	if _, err := os.Stat(where); !os.IsNotExist(err) {
 		// it exists
 		models.Wd = dict.ReadDict(where)
-		models.Report = append(models.Report, fmt.Sprintf("using wordlist: %s (%d words)", p.Wlang, len(models.Wd)))
+		models.Report = append(models.Report, fmt.Sprintf("using wordlist: %s (%d words)", models.P.Wlang, len(models.Wd)))
 	} else {
 		models.Report = append(models.Report, fmt.Sprintf("no dictionary present"))
 	}
@@ -107,13 +106,13 @@ func main() {
 	// now the good word list.
 	// by default it is named good_words.txt and is in the project folder (current working directory)
 	// user can override by specifying a complete path to the -g option
-	if len(p.GWFilename) > 0 { // a good word list was specified
-		if _, err := os.Stat(p.GWFilename); !os.IsNotExist(err) { // it exists
-			models.Gwl = dict.ReadWordList(p.GWFilename)
+	if len(models.P.GWFilename) > 0 { // a good word list was specified
+		if _, err := os.Stat(models.P.GWFilename); !os.IsNotExist(err) { // it exists
+			models.Gwl = dict.ReadWordList(models.P.GWFilename)
 			models.Report = append(models.Report, fmt.Sprintf("good word list: %d words", len(models.Gwl)))
 			models.Wd = append(models.Wd, models.Gwl...) // add good_words into dictionary
 		} else { // it does not exist
-			models.Report = append(models.Report, fmt.Sprintf("no %s found", p.GWFilename))
+			models.Report = append(models.Report, fmt.Sprintf("no %s found", models.P.GWFilename))
 		}
 	} else { // no full path good_words.txt file was specified. if it exists, it's in the loc_proj
 		if _, err := os.Stat(filepath.Join(loc_proj, "good_words.txt")); !os.IsNotExist(err) {
@@ -180,7 +179,7 @@ func main() {
 	/*************************************************************************/
 
 	// smart quote check
-	if p.Nosqc {
+	if models.P.Nosqc {
 		models.Report = append(models.Report, "")
 		models.Report = append(models.Report, "********************************************************************************")
 		models.Report = append(models.Report, "* SMART QUOTE CHECKS                                                           *")
@@ -200,7 +199,7 @@ func main() {
 
 	// levenshtein check
 	// compares all suspect words to all okwords in text
-	if p.Nolev {
+	if models.P.Nolev {
 		models.Report = append(models.Report, "")
 		models.Report = append(models.Report, "********************************************************************************")
 		models.Report = append(models.Report, "* LEVENSHTEIN (EDIT DISTANCE) CHECKS                                           *")
@@ -231,14 +230,14 @@ func main() {
 	t2 := time.Now()
 	models.Report = append(models.Report, fmt.Sprintf("execution time: %.2f seconds", t2.Sub(start).Seconds()))
 
-	fileio.SaveText(models.Report, p.Outfile, p.UseBOM, p.UseCRLF)
+	fileio.SaveText(models.Report, models.P.Outfile, models.P.UseBOM, models.P.UseCRLF)
 
 	// remaining words in sw are suspects. conditionally generate a report
 	var s []string
-	if p.Experimental {
+	if models.P.Experimental {
 		for _, word := range sw {
 			s = append(s, fmt.Sprintf("%s", word))
 		}
-		fileio.SaveText(s, "logsuspects.txt", p.UseBOM, p.UseCRLF)
+		fileio.SaveText(s, "logsuspects.txt", models.P.UseBOM, models.P.UseCRLF)
 	}
 }

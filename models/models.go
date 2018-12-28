@@ -11,6 +11,7 @@ type Params struct {
 	UseBOM       bool
 	UseCRLF      bool
 }
+var P Params
 
 // the Lwl is a slice of slices of strings, one per line. order maintained
 // Lwl[31] contains a slice of strings containing the words on line "31"

@@ -4,6 +4,8 @@ import (
 	"github.com/asylumcs/pptext/models"
 	"strings"
 	"unicode/utf8"
+	"encoding/json"
+	"fmt"
 )
 
 // compare the good word list to the submitted word
@@ -17,83 +19,94 @@ func InGoodWordList(s string) bool {
 	return false
 }
 
-func GetParaSeg(full_s string, where int) string {
-	lsen := where - 30 // these are char positions, not runes
-	rsen := where + 30 // left and right sentinels
-	if lsen < 0 {
-		rsen -= lsen // effectively entends right if left underflowed
-		lsen = 0
-	}
-	if rsen >= len(full_s) {
-		lsen -= (rsen - len(full_s)) // extend left if right overflowed
-		rsen = len(full_s) - 1
-	}
-	// assure in string
-	if lsen < 0 {
-		lsen = 0
-	}
-	if rsen > len(full_s)-1 {
-		rsen = len(full_s) - 1
-	}
-	// now find sentinels at rune boundaries
-	if !utf8.RuneStart(full_s[lsen]) {
-		for ok := true; ok; ok = !utf8.RuneStart(full_s[lsen]) {
-			lsen++
-		}
-	}
-	if !utf8.RuneStart(full_s[rsen]) {
-		for ok := true; ok; ok = !utf8.RuneStart(full_s[rsen]) {
-			rsen--
-		}
-	}
-	// full_s[lsen:rsen] is a valid string on rune boundaries
-	// approximatly 60 bytes (not characters) long
-	flushLeft := (lsen == 0)
-	flushRight := (rsen == len(full_s)-1)
-	s := full_s[lsen:rsen]
-
-	// chop off leading runes until on a space if one is available
-	// unless at the start of the string already
-	if !flushLeft && strings.ContainsRune(s, ' ') {
-		for len(s) > 0 {
-			runeValue, width := utf8.DecodeRuneInString(s)
-			if runeValue == ' ' {
-				break
-			}
-			s = s[width:]
-		}
-	}
-
-	// chop off trailing runes until on a space if one is available
-	// unless at the end of the string already
-	if !flushRight && strings.ContainsRune(s, ' ') {
-		for len(s) > 0 {
-			runeValue, width := utf8.DecodeLastRuneInString(s)
-			if runeValue == ' ' {
-				break
-			}
-			s = s[:len(s)-width]
-		}
-	}
-
-	s = strings.TrimSpace(s)
-	return s
+type rp struct {
+	rpr rune
+	rpp int
 }
 
-/* NOTUSED
+func useStart(s string, rps []rp) string {
+	rs := ""
+   	if len(rps) < 60 {
+   		rs = s
+   	} else {
+   		t := 60
+    	for {
+    		if rps[t].rpr == ' ' {
+    			break
+    		}
+    		t--
+    	}   		
+   		rs = strings.TrimSpace(s[0:rps[t].rpp])
+   	}
+   	return rs
+}
+
+func useEnd (s string, rps []rp) string {
+	rs := ""
+   	if len(rps) < 60 {
+   		rs = s
+   	} else {
+   		t := len(rps)-60
+    	for {
+    		if rps[t].rpr == ' ' {
+    			break
+    		}
+    		t++
+    	}   		
+   		rs = strings.TrimSpace(s[rps[t].rpp:len(s)])
+   	}
+   	return rs
+}
+
+func GetParaSeg(s string, where int) string {
     // convert paragraph to slice of {runes, positions}
-	type rp struct {
-		rpr rune
-		rpp int
-	}
 	rps := make([]rp, 0)
-	for i, w := 0, 0; i < len(para); i += w {
-        runeValue, width := utf8.DecodeRuneInString(para[i:])
+	rs := ""  // return string
+	for i, w := 0, 0; i < len(s); i += w {
+        runeValue, width := utf8.DecodeRuneInString(s[i:])
         // fmt.Printf("%#U starts at byte position %d\n", runeValue, i)
         rps = append(rps, rp{rpr:runeValue, rpp: i})
         w = width
     }
-*/
+    if where == -1 { // show paragraph end
+    	rs = useEnd(s, rps)
+    }
+    if where == 0 { // show paragraph start
+    	rs = useStart(s, rps)
+    }
+    if rs == "" {  // we are given a center point as a byte position
+    	crp := 0  // center run position as index into rps
+    	for i := 0; i < len(rps); i++ {
+    		if rps[i].rpp == where {
+    			crp = i
+    		}
+    	}
+    	if crp - 30 < 0 {
+    		rs = useStart(s, rps)
+    	}
+    	if rs == "" && crp + 30 >= len(rps) {
+    		rs = useEnd(s, rps)
+    	}
+    	if rs == "" {
+    		sleft := crp - 30
+    		for {
+    			if rps[sleft].rpr == ' ' {
+    				break
+    			}
+    			sleft++
+    		}
+    		sright := crp + 30
+    		for {
+    			if rps[sright].rpr == ' ' {
+    				break
+    			}
+    			sright--
+    		}
+    		rs = strings.TrimSpace(s[rps[sleft].rpp:rps[sright].rpp])
+    	}
+    }
+    return rs
+}
 
 func PuncStyle() string {
 
@@ -112,4 +125,14 @@ func PuncStyle() string {
 	} else {
 		return "American"
 	}
+}
+
+// Pretty print variable (struct, map, array, slice) in Golang.
+
+func PrettyPrint(v interface{}) (err error) {
+      b, err := json.MarshalIndent(v, "", "  ")
+      if err == nil {
+              fmt.Println(string(b))
+      }
+      return
 }
