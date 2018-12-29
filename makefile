@@ -14,3 +14,7 @@ up:
 
 up2: up
 	(cd ~/projects/websites/rfrank.io && make up)
+
+test:
+	go build
+	./pptext -i ~/Desktop/book-utf8.txt

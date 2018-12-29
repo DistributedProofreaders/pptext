@@ -66,10 +66,10 @@ func curlyQuoteCheck(wb []string) {
 func scannoCheck(wb []string) {
 	report("\n----- scanno check -----------------------------------------------------------\n")
 	count := 0
-	for _, scannoword := range models.Swl { // scannos word list
-		ast := 0
-		for n, linewords := range models.Lwl { // slice of slices of words per line
-			for _, word := range linewords {
+	for n, linewords := range models.Lwl { // slice of slices of words per line
+		for _, word := range linewords { // each word on line
+			for _, scannoword := range models.Swl { // each scanno candidate
+				ast := 0
 				if word == scannoword {
 					if ast == 0 {
 						report(fmt.Sprintf("    %s", word))
