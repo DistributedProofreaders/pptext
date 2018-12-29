@@ -55,6 +55,8 @@ func main() {
 	models.Report = append(models.Report, fmt.Sprintf("* %76s *", "started "+time.Now().Format(time.RFC850)))
 	models.Report = append(models.Report, fmt.Sprintf("********************************************************************************"))
 
+	models.Report = append(models.Report, fmt.Sprintf("pptext version: %s", "2018.12.29"))
+
 	models.P = doParams() // parse command line parameters
 
 	/*************************************************************************/
