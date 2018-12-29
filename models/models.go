@@ -10,6 +10,7 @@ type Params struct {
 	Nosqc        bool
 	UseBOM       bool
 	UseCRLF      bool
+	Verbose      bool
 }
 var P Params
 

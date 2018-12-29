@@ -43,6 +43,7 @@ func doParams() models.Params {
 	flag.BoolVar(&p.Nosqc, "q", false, "do not run smart quote checks")
 	flag.BoolVar(&p.UseBOM, "useBOM", true, "use BOM on text output")
 	flag.BoolVar(&p.UseCRLF, "useCRLF", true, "CRLF line endings on output")
+	flag.BoolVar(&p.Verbose, "v", false, "Verbose: show all reports")
 	flag.Parse()
 	return p
 }
@@ -76,6 +77,9 @@ func main() {
 	} else {
 		_, file := filepath.Split(models.P.Infile)
 		models.Report = append(models.Report, fmt.Sprintf("processing file: %s", file))
+	}
+	if models.P.Verbose {
+		models.Report = append(models.Report, fmt.Sprintf("verbose flag: %s", "on"))	
 	}
 
 	/*************************************************************************/

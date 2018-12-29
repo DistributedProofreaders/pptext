@@ -337,10 +337,10 @@ func letterChecks(wb []string) {
 			count += 1
 			for n, line := range wb {
 				if strings.ContainsRune(line, kv.Key) {
-					if reportcount < 5 {
+					if reportcount < 5 || models.P.Verbose {
 						report(fmt.Sprintf("  %5d: %s", n, line))
 					}
-					if reportcount == 5 {
+					if reportcount == 5 && !models.P.Verbose {
 						report(fmt.Sprintf("    ...more"))
 					}
 					reportcount++
@@ -546,12 +546,12 @@ func paraLevel() {
 				count++
 			}
 			sscnt++
-			if sscnt < RLIMIT {
+			if sscnt < RLIMIT || models.P.Verbose {
 				report("    " + util.GetParaSeg(para, 0))
 			}
 		}
 	}
-	if sscnt > RLIMIT {
+	if sscnt > RLIMIT && !models.P.Verbose {
 		report(fmt.Sprintf("    ...%d more", sscnt-RLIMIT))
 	}
 
@@ -580,14 +580,14 @@ func paraLevel() {
 					count++
 				}
 				sscnt++
-				if sscnt < RLIMIT {
+				if sscnt < RLIMIT || models.P.Verbose {
 					report("    " + util.GetParaSeg(para, lmatch[0]))
 				}
 			}
 		}
 
 	}
-	if sscnt > RLIMIT {
+	if sscnt > RLIMIT && !models.P.Verbose {
 		report(fmt.Sprintf("    ...%d more", sscnt-RLIMIT))
 	}
 
@@ -604,12 +604,12 @@ func paraLevel() {
 				count++
 			}
 			sscnt++
-			if sscnt < RLIMIT {
+			if sscnt < RLIMIT || models.P.Verbose {
 				report("    " + util.GetParaSeg(para, loc[0]))
 			}
 		}
 	}
-	if sscnt > RLIMIT {
+	if sscnt > RLIMIT && !models.P.Verbose {
 		report(fmt.Sprintf("    ...%d more", sscnt-RLIMIT))
 	}
 
@@ -626,12 +626,12 @@ func paraLevel() {
 				count++
 			}
 			sscnt++
-			if sscnt < RLIMIT {
+			if sscnt < RLIMIT || models.P.Verbose {
 				report("    " + util.GetParaSeg(para, loc[0]))
 			}
 		}
 	}
-	if sscnt > RLIMIT {
+	if sscnt > RLIMIT && !models.P.Verbose {
 		report(fmt.Sprintf("    ...%d more", sscnt-RLIMIT))
 	}
 
@@ -648,12 +648,12 @@ func paraLevel() {
 				count++
 			}
 			sscnt++
-			if sscnt < RLIMIT {
+			if sscnt < RLIMIT || models.P.Verbose {
 				report("    " + util.GetParaSeg(para, loc[0]))
 			}
 		}
 	}
-	if sscnt > RLIMIT {
+	if sscnt > RLIMIT && !models.P.Verbose {
 		report(fmt.Sprintf("    ...%d more", sscnt-RLIMIT))
 	}
 
@@ -678,12 +678,12 @@ func paraLevel() {
 				count++
 			}
 			sscnt++
-			if sscnt < RLIMIT {
+			if sscnt < RLIMIT || models.P.Verbose {
 				report("    " + util.GetParaSeg(para, aloc[0]))
 			}
 		}
 	}
-	if sscnt > RLIMIT {
+	if sscnt > RLIMIT && !models.P.Verbose {
 		report(fmt.Sprintf("    ...%d more", sscnt-RLIMIT))
 	}
 
@@ -698,12 +698,12 @@ func paraLevel() {
 				count++
 			}
 			sscnt++
-			if sscnt < RLIMIT {
+			if sscnt < RLIMIT || models.P.Verbose {
 				report("    " + util.GetParaSeg(para, aloc[0]))
 			}
 		}
 	}
-	if sscnt > RLIMIT {
+	if sscnt > RLIMIT && !models.P.Verbose {
 		report(fmt.Sprintf("    ...%d more", sscnt-RLIMIT))
 	}
 
@@ -718,12 +718,12 @@ func paraLevel() {
 				count++
 			}
 			sscnt++
-			if sscnt < RLIMIT {
+			if sscnt < RLIMIT || models.P.Verbose {
 				report("    " + util.GetParaSeg(para, aloc[0]))
 			}
 		}
 	}
-	if sscnt > RLIMIT {
+	if sscnt > RLIMIT && !models.P.Verbose {
 		report(fmt.Sprintf("    ...%d more", sscnt-RLIMIT))
 	}
 
@@ -751,12 +751,12 @@ func paraLevel() {
 				count++
 			}
 			sscnt++
-			if sscnt < RLIMIT {
+			if sscnt < RLIMIT || models.P.Verbose {
 				report("    ..." + util.GetParaSeg(para, -1))  // show paragraph end
 			}
 		}
 	}
-	if sscnt > RLIMIT {
+	if sscnt > RLIMIT && !models.P.Verbose {
 		report(fmt.Sprintf("    ...%d more", sscnt-RLIMIT))
 	}
 
