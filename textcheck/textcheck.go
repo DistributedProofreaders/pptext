@@ -774,7 +774,7 @@ func paraLevel() {
 func gutChecks(wb []string) {
 	report("\n----- special situations checks -----------------------------------------------\n")
 
-	re0000 := regexp.MustCompile(`\[[^FSIG\d]`)                               // allow Footnote, Illustration, S?, G?, or number
+	re0000 := regexp.MustCompile(`\[[^IG\d]`)                                 // allow Illustration, Greek, or number
 	re0001 := regexp.MustCompile(`(?i)\bthe[\.\,\?\'\"\;\:\!\@\#\$\^\&\(\)]`) // punctuation after "the"
 	re0002 := regexp.MustCompile(`(,\.)|(\.,)|(,,)|([^\.]\.\.[^\.])`)         // double punctuation
 	re0003a := regexp.MustCompile(`[a-z]`)                                    // for mixed case check
@@ -853,7 +853,7 @@ func gutChecks(wb []string) {
 	for n, line := range wb {
 
 		if re0000.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  opening square bracket followed by other than F, S, I, G or number", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"  opening square bracket followed by other than I, G or number", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0001.MatchString(line) {
 			gcreports = append(gcreports, reportln{"  punctuation after 'the'", fmt.Sprintf("  %5d: %s", n, line)})
