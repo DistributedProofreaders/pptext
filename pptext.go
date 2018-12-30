@@ -27,7 +27,7 @@ import (
 	"time"
 )
 
-// const VERSION string = "0.90"
+const VERSION string = "2018.12.30"
 
 var wlm []string // suspect words returned as list by spellcheck
 var sw []string  // suspect words list
@@ -49,13 +49,14 @@ func doParams() models.Params {
 }
 
 func main() {
+	loc, _ := time.LoadLocation("America/Denver")
 	start := time.Now()
 	models.Report = append(models.Report, fmt.Sprintf("********************************************************************************"))
 	models.Report = append(models.Report, fmt.Sprintf("* %-76s *", "PPTEXT RUN REPORT"))
-	models.Report = append(models.Report, fmt.Sprintf("* %76s *", "started "+time.Now().Format(time.RFC850)))
+	models.Report = append(models.Report, fmt.Sprintf("* %76s *", "started "+time.Now().In(loc).Format(time.RFC850)))
 	models.Report = append(models.Report, fmt.Sprintf("********************************************************************************"))
 
-	models.Report = append(models.Report, fmt.Sprintf("pptext version: %s", "2018.12.29"))
+	models.Report = append(models.Report, fmt.Sprintf("pptext version: %s", VERSION))
 
 	models.P = doParams() // parse command line parameters
 
