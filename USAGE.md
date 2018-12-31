@@ -22,13 +22,14 @@ flags are:
     -q do not run smart quote checks
     -v verbose; show all reports
     -b do not use BOM on report
-    -x experimental, for developers
+    -u unix line endings (default Windows™ line endings)
+    -x experimental, for developers only
 
 data file.
   the data file pptext.dat is required in the same folder as
   the pptext executable. it contains:
 
-	1. he/be master phrase-frequency lists
+	1. he/be phrase-frequency master lists
  	2. scannos list
 
 To use the standalone version, have these in the same folder:
