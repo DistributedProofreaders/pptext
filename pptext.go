@@ -27,7 +27,7 @@ import (
 	"time"
 )
 
-const VERSION string = "2018.12.30"
+const VERSION string = "2018.12.31"
 
 var wlm []string // suspect words returned as list by spellcheck
 var sw []string  // suspect words list
@@ -81,9 +81,13 @@ func main() {
 		_, file := filepath.Split(models.P.Infile)
 		models.Report = append(models.Report, fmt.Sprintf("processing file: %s", file))
 	}
+	/*
+	do not report. work to do with verbose flag. some things should always be
+	"all reports" and others could be truncated.
 	if models.P.Verbose {
 		models.Report = append(models.Report, fmt.Sprintf("verbose flag: %s", "on"))	
 	}
+	*/
 
 	/*************************************************************************/
 	/* working dictionary (models.Wd)                                        */

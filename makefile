@@ -10,7 +10,7 @@ clean:
 
 up:
 	go build
-	cp -r wordlists pptext pptext.dat ~/projects/websites/rfrank.io/site
+	rsync -av wordlists pptext pptext.dat ~/projects/websites/rfrank.io/site
 
 up2: up
 	(cd ~/projects/websites/rfrank.io && make up)

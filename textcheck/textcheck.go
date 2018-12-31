@@ -210,7 +210,7 @@ const (
 	WAY_TOO_LONG     = 80
 )
 
-// short line::
+// short line:
 // this line has no leading space, has some text, length of line less than
 // 55 characters, following line has some text.
 // all lengths count runes
@@ -225,9 +225,14 @@ func shortLines(wb []string) {
 			utf8.RuneCountInString(line) > 0 &&
 			utf8.RuneCountInString(line) <= SHORTEST_PG_LINE &&
 			utf8.RuneCountInString(wb[n+1]) > 0 {
-			report(fmt.Sprintf("  %5d: %s", n, line))
-			count++
+				if count <= 10 {
+					report(fmt.Sprintf("  %5d: %s", n, line))
+				}
+				count++
 		}
+	}
+	if count > 5 {
+		report(fmt.Sprintf("  ....%5d more.", count - 5))
 	}
 	if count == 0 {
 		report("  no short lines found in text.")
@@ -271,7 +276,12 @@ func adjacentSpaces(wb []string) {
 	count := 0
 	for n, line := range wb {
 		if strings.Contains(strings.TrimSpace(line), "  ") {
-			report(fmt.Sprintf("  %5d: %s", n, line))
+			if count < 10 {
+				report(fmt.Sprintf("  %5d: %s", n, line))
+			}
+			if count == 10 {
+				report(fmt.Sprintf("    ...more"))	
+			}
 			count += 1
 		}
 	}
@@ -334,13 +344,15 @@ func letterChecks(wb []string) {
 		if reportme {
 			reportcount := 0
 			report(fmt.Sprintf("%s", strconv.QuoteRune(kv.Key)))
+			// report(fmt.Sprintf("%s", kv.Key))
+			count += 1
 			count += 1
 			for n, line := range wb {
 				if strings.ContainsRune(line, kv.Key) {
-					if reportcount < 5 || models.P.Verbose {
+					if reportcount < 10 {
 						report(fmt.Sprintf("  %5d: %s", n, line))
 					}
-					if reportcount == 5 && !models.P.Verbose {
+					if reportcount == 10 {
 						report(fmt.Sprintf("    ...more"))
 					}
 					reportcount++
@@ -420,9 +432,7 @@ func bookLevel(wb []string) {
 	count := 0
 	report("\n----- book level checks -----------------------------------------------\n")
 
-	/*
-	 * check: straight and curly quotes mixed
-	 */
+	// check: straight and curly quotes mixed
 	if m['\''] > 0 && (m['‘'] > 0 || m['’'] > 0) {
 		report("  both straight and curly single quotes found in text")
 		count++
@@ -433,10 +443,7 @@ func bookLevel(wb []string) {
 		count++
 	}
 
-	/*
-	 * check to-day and today mixed
-	 */
-
+	// check to-day and today mixed
 	ctoday, ctohday, ctonight, ctohnight := 0, 0, 0, 0
 	re01 := regexp.MustCompile(`(?i)today`)
 	re02 := regexp.MustCompile(`(?i)to-day`)
@@ -457,10 +464,7 @@ func bookLevel(wb []string) {
 		count++
 	}
 
-	/*
-	 * check: American and British title punctuation mixed
-	 */
-
+	// check: American and British title punctuation mixed
 	mrpc, mrc, mrspc, mrsc, drpc, drc := false, false, false, false, false, false
 	re1 := regexp.MustCompile(`Mr.`)
 	re2 := regexp.MustCompile(`Mr\s`)
@@ -501,9 +505,7 @@ func bookLevel(wb []string) {
 		count++
 	}
 
-	/*
-	 * apostrophes and turned commas
-	 */
+	// apostrophes and turned commas
 	countm1, countm2 := 0, 0
 	for n, _ := range wb {
 		// check each word separately on this line
@@ -849,119 +851,123 @@ func gutChecks(wb []string) {
 
 	re_comma := regexp.MustCompile(NOCOMMAPATTERN)
 	re_period := regexp.MustCompile(NOPERIODPATTERN)
+	abandonedTagCount := 0 // courtesy limit if user uploads fpgen source, etc.
 
 	for n, line := range wb {
 
 		if re0000.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  opening square bracket followed by other than I, G or number", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"opening square bracket followed by other than I, G or number", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0001.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  punctuation after 'the'", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"punctuation after 'the'", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0002.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  punctuation error", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"punctuation error", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		// check each word separately on this line
 		for _, word := range models.Lwl[n] {
 			// check for mixed case within word after the first character,
 			// but not if the word is in the good word list or if it occurs more than once
 			if models.Wlm[word] < 2 && !util.InGoodWordList(word) && re0003a.MatchString(word[1:]) && re0003b.MatchString(word[1:]) {
-				gcreports = append(gcreports, reportln{"  mixed case within word", fmt.Sprintf("  %5d: %s", n, line)})
+				gcreports = append(gcreports, reportln{"mixed case within word", fmt.Sprintf("  %5d: %s", n, line)})
 			}
 			if len(word) > 2 {
 				last2 := word[len(word)-2:]
 				if re0003c.MatchString(last2) {
-					gcreports = append(gcreports, reportln{fmt.Sprintf("  query word ending with %s", last2), fmt.Sprintf("  %5d: %s", n, line)})
+					gcreports = append(gcreports, reportln{fmt.Sprintf("query word ending with %s", last2), fmt.Sprintf("  %5d: %s", n, line)})
 				}
 				first2 := word[:2]
 				if re0003d.MatchString(first2) {
-					gcreports = append(gcreports, reportln{fmt.Sprintf("  query word starting with %s", first2), fmt.Sprintf("  %5d: %s", n, line)})
+					gcreports = append(gcreports, reportln{fmt.Sprintf("query word starting with %s", first2), fmt.Sprintf("  %5d: %s", n, line)})
 				}
 			}
 		}
 		if re0004.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  initials spacing", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"initials spacing", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0006.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  single character line", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"single character line", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0007.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  broken hyphenation", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"broken hyphenation", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0008a.MatchString(line) ||
 			re0008b.MatchString(line) ||
 			re0008c.MatchString(line) ||
 			re0008d.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  comma spacing", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"comma spacing", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0009a.MatchString(line) ||
 			re0009b.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  full-stop spacing", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"full-stop spacing", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0010.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  date format", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"date format", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0011.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  I/! check", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"I/! check", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0012.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  disjointed contraction", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"disjointed contraction", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0013.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  title abbreviation comma", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"title abbreviation comma", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0014.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  spaced punctuation", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"spaced punctuation", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0016.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  abandoned HTML tag", fmt.Sprintf("  %5d: %s", n, line)})
+			if abandonedTagCount < 10 {
+				gcreports = append(gcreports, reportln{"abandoned HTML tag", fmt.Sprintf("  %5d: %s", n, line)})
+			}	
+			abandonedTagCount++
 		}
 		if re0017.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  ellipsis check", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"ellipsis check", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0018.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  quote error (context)", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"quote error (context)", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0019.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  standalone 0", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"standalone 0", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0020a.MatchString(line) && !re0020b.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  standalone 1", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"standalone 1", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0021.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  mixed letters and numbers in word", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"mixed letters and numbers in word", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0022.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  trailing space on line", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"trailing space on line", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0023.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  abbreviation &c without period", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"abbreviation &c without period", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0024.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  line starts with suspect punctuation", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"line starts with suspect punctuation", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if re0025.MatchString(line) {
-			gcreports = append(gcreports, reportln{"  line that starts with hyphen and then non-hyphen", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"line that starts with hyphen and then non-hyphen", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 
 		// begin non-regexp based
 		if strings.Contains(line, "Blank Page") {
-			gcreports = append(gcreports, reportln{"  Blank Page placeholder found", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"Blank Page placeholder found", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if strings.Contains(line, "—-") || strings.Contains(line, "-—") {
-			gcreports = append(gcreports, reportln{"  mixed hyphen/dash", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"mixed hyphen/dash", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if strings.Contains(line, "\u00A0") {
-			gcreports = append(gcreports, reportln{"  non-breaking space", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"non-breaking space", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if strings.Contains(line, "\u00AD") {
-			gcreports = append(gcreports, reportln{"  soft hyphen", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"soft hyphen", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if strings.Contains(line, "\u0009") {
-			gcreports = append(gcreports, reportln{"  tab character", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"tab character", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		if strings.Contains(line, "&") {
-			gcreports = append(gcreports, reportln{"  ampersand character", fmt.Sprintf("  %5d: %s", n, line)})
+			gcreports = append(gcreports, reportln{"ampersand character", fmt.Sprintf("  %5d: %s", n, line)})
 		}
 		lcline := strings.ToLower(line)
 		if re_comma.MatchString(lcline) {
@@ -974,6 +980,10 @@ func gutChecks(wb []string) {
 
 	sort.Slice(gcreports, func(i, j int) bool { return gcreports[i].sourceline < gcreports[j].sourceline })
 	sort.SliceStable(gcreports, func(i, j int) bool { return gcreports[i].rpt < gcreports[j].rpt })
+
+	if abandonedTagCount > 10 {
+		rs = append(rs, fmt.Sprintf("note: source file not plain text. %d lines with markup", abandonedTagCount))
+	}
 
 	if len(gcreports) == 0 {
 		report("  no special situation reports.")

@@ -26,16 +26,19 @@ type rp struct {
 
 func useStart(s string, rps []rp) string {
 	rs := ""
-   	if len(rps) < 60 {
+  if len(rps) <= 60 {
    		rs = s
-   	} else {
+  } else {
    		t := 60
     	for {
-    		if rps[t].rpr == ' ' {
+    		if t == 0 || rps[t].rpr == ' ' {
     			break
     		}
     		t--
-    	}   		
+    	}
+      if t == 0 {  // never found a space
+        t = 60  // reset to 60 runes
+      }
    		rs = strings.TrimSpace(s[0:rps[t].rpp])
    	}
    	return rs
@@ -43,16 +46,19 @@ func useStart(s string, rps []rp) string {
 
 func useEnd (s string, rps []rp) string {
 	rs := ""
-   	if len(rps) < 60 {
+   	if len(rps) < 60 { // if 60 runes, keep them all
    		rs = s
    	} else {
-   		t := len(rps)-60
+   		t := len(rps)-60  // start looking 60 runes from the end
     	for {
-    		if rps[t].rpr == ' ' {
+    		if rps[t].rpr == ' ' || t == len(rps)-1 {
     			break
     		}
     		t++
-    	}   		
+    	}
+      if t == len(rps)-1 {  // there were no spaces
+        t = len(rps)-60  // reset 60 spaces back
+      }
    		rs = strings.TrimSpace(s[rps[t].rpp:len(s)])
    	}
    	return rs
