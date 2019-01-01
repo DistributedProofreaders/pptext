@@ -49,21 +49,21 @@ func ReadText(infile string) []string {
 }
 
 // saves working buffer
-// BOM and line ending CRLF are options. default is no
-func SaveText(a []string, outfile string, useBOM bool, useCRLF bool) {
+func SaveText(a []string, outfile string, noBOM bool, useLF bool) {
 	f2, err := os.Create(outfile)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer f2.Close()
-	if useBOM {
+	if !noBOM {  // normally provide a Byte Order Mark
 		a[0] = BOM + a[0]
 	}
 	for _, line := range a {
-		if useCRLF {
-			fmt.Fprintf(f2, "%s\r\n", line)
-		} else {
+		if useLF {
 			fmt.Fprintf(f2, "%s\n", line)
+		} else {
+			s := strings.Replace(line, "\n", "\r\n", -1)
+			fmt.Fprintf(f2, "%s\r\n", s)
 		}
 	}
 }

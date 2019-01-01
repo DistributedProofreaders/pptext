@@ -8,8 +8,8 @@ type Params struct {
 	Experimental bool
 	Nolev        bool
 	Nosqc        bool
-	UseBOM       bool
-	UseCRLF      bool
+	NoBOM        bool
+	UseLF        bool
 	Verbose      bool
 }
 var P Params

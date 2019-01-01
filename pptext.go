@@ -41,8 +41,8 @@ func doParams() models.Params {
 	flag.BoolVar(&p.Experimental, "x", false, "experimental (developers only)")
 	flag.BoolVar(&p.Nolev, "d", false, "do not run Levenshtein distance tests")
 	flag.BoolVar(&p.Nosqc, "q", false, "do not run smart quote checks")
-	flag.BoolVar(&p.UseBOM, "useBOM", true, "use BOM on text output")
-	flag.BoolVar(&p.UseCRLF, "useCRLF", true, "CRLF line endings on output")
+	flag.BoolVar(&p.NoBOM, "noBOM", false, "no BOM on text report")
+	flag.BoolVar(&p.UseLF, "useLF", false, "LF line endings on report")
 	flag.BoolVar(&p.Verbose, "v", false, "Verbose: show all reports")
 	flag.Parse()
 	return p
@@ -82,11 +82,11 @@ func main() {
 		models.Report = append(models.Report, fmt.Sprintf("processing file: %s", file))
 	}
 	/*
-	do not report. work to do with verbose flag. some things should always be
-	"all reports" and others could be truncated.
-	if models.P.Verbose {
-		models.Report = append(models.Report, fmt.Sprintf("verbose flag: %s", "on"))	
-	}
+		do not report. work to do with verbose flag. some things should always be
+		"all reports" and others could be truncated.
+		if models.P.Verbose {
+			models.Report = append(models.Report, fmt.Sprintf("verbose flag: %s", "on"))
+		}
 	*/
 
 	/*************************************************************************/
@@ -241,7 +241,7 @@ func main() {
 	t2 := time.Now()
 	models.Report = append(models.Report, fmt.Sprintf("execution time: %.2f seconds", t2.Sub(start).Seconds()))
 
-	fileio.SaveText(models.Report, models.P.Outfile, models.P.UseBOM, models.P.UseCRLF)
+	fileio.SaveText(models.Report, models.P.Outfile, models.P.NoBOM, models.P.UseLF)
 
 	// remaining words in sw are suspects. conditionally generate a report
 	var s []string
@@ -249,6 +249,6 @@ func main() {
 		for _, word := range sw {
 			s = append(s, fmt.Sprintf("%s", word))
 		}
-		fileio.SaveText(s, "logsuspects.txt", models.P.UseBOM, models.P.UseCRLF)
+		fileio.SaveText(s, "logsuspects.txt", models.P.NoBOM, models.P.UseLF)
 	}
 }

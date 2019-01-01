@@ -21,8 +21,8 @@ flags are:
     -d do not run Levenshtein distance tests
     -q do not run smart quote checks
     -v verbose; show all reports
-    -b do not use BOM on report
-    -u unix line endings (default Windows™ line endings)
+    -noBOM do not use BOM on report
+    -useLF unix line endings (LF)
     -x experimental, for developers only
 
 data file.
