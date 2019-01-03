@@ -468,11 +468,11 @@ func bookLevel(wb []string) {
 
 	// check: American and British title punctuation mixed
 	mrpc, mrc, mrspc, mrsc, drpc, drc := false, false, false, false, false, false
-	re1 := regexp.MustCompile(`Mr.`)
+	re1 := regexp.MustCompile(`Mr\.`)
 	re2 := regexp.MustCompile(`Mr\s`)
-	re3 := regexp.MustCompile(`Mrs.`)
+	re3 := regexp.MustCompile(`Mrs\.`)
 	re4 := regexp.MustCompile(`Mrs\s`)
-	re5 := regexp.MustCompile(`Dr.`)
+	re5 := regexp.MustCompile(`Dr\.`)
 	re6 := regexp.MustCompile(`Dr\s`)
 	for _, para := range wb {
 		if !mrpc {

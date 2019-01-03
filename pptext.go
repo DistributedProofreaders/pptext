@@ -27,7 +27,7 @@ import (
 	"time"
 )
 
-const VERSION string = "2018.12.31"
+const VERSION string = "2019.01.03"
 
 var wlm []string // suspect words returned as list by spellcheck
 var sw []string  // suspect words list
