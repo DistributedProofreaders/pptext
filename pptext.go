@@ -119,16 +119,20 @@ func main() {
 	// user can override by specifying a complete path to the -g option
 	if len(models.P.GWFilename) > 0 { // a good word list was specified
 		if _, err := os.Stat(models.P.GWFilename); !os.IsNotExist(err) { // it exists
+			_, file := filepath.Split(models.P.GWFilename)
+			models.Report = append(models.Report, fmt.Sprintf("good words file: %s", file))
 			models.Gwl = dict.ReadWordList(models.P.GWFilename)
-			models.Report = append(models.Report, fmt.Sprintf("good word list: %d words", len(models.Gwl)))
+			models.Report = append(models.Report, fmt.Sprintf("good word count: %d words", len(models.Gwl)))
 			models.Wd = append(models.Wd, models.Gwl...) // add good_words into dictionary
 		} else { // it does not exist
 			models.Report = append(models.Report, fmt.Sprintf("no %s found", models.P.GWFilename))
 		}
 	} else { // no full path good_words.txt file was specified. if it exists, it's in the loc_proj
 		if _, err := os.Stat(filepath.Join(loc_proj, "good_words.txt")); !os.IsNotExist(err) {
+			_, file := filepath.Split(models.P.GWFilename)
+			models.Report = append(models.Report, fmt.Sprintf("good words file: %s", file))
 			models.Gwl = dict.ReadWordList(filepath.Join(loc_proj, "good_words.txt"))
-			models.Report = append(models.Report, fmt.Sprintf("good word list: %d words", len(models.Gwl)))
+			models.Report = append(models.Report, fmt.Sprintf("good word count: %d words", len(models.Gwl)))
 			models.Wd = append(models.Wd, models.Gwl...) // add good_words into dictionary
 		} else { // it does not exist
 			models.Report = append(models.Report, fmt.Sprintf("no %s found", "good_words.txt"))

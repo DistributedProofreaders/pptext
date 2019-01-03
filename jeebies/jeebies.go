@@ -43,6 +43,7 @@ func Jeebies() {
 	var reported map[string]int
 
 	reported = make(map[string]int)
+	nreports := 0
 
 	// looking for "be" errors
 	// search for three-word pattern  "w1 be w2" in lower-case paragraphs
@@ -88,6 +89,7 @@ func Jeebies() {
 					}
 					reported[strings.SplitAfterN(sstr, " ", 2)[1]] = 1
 					report(t01)
+					nreports++
 				}
 
 				// see if there is another candidate
@@ -143,6 +145,7 @@ func Jeebies() {
 					}
 					reported[strings.SplitAfterN(sstr, " ", 2)[1]] = 1
 					report(t01)
+					nreports++
 				}
 
 				// see if there is another candidate
@@ -268,6 +271,8 @@ func Jeebies() {
 		}
 	}
 	*/
-
+	if nreports == 0 {
+		report("  no jeebies checks reported.")
+	}
 	models.Report = append(models.Report, rs...)
 }

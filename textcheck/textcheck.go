@@ -420,11 +420,13 @@ func spacingCheck(wb []string) {
 		count++
 	}
 	report(s)
+	/*
 	if count > 0 {
 		report("  spacing anomalies reported.")
 	} else {
 		report("  no spacing anomalies reported.")
 	}
+	*/
 }
 
 // book-level checks
