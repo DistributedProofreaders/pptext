@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.01.04"
+const VERSION string = "2019.01.05"
 
 var sw []string      // suspect words list
 
@@ -60,7 +60,7 @@ var p params
 var lwl []([]string)
 
 // wordListMap has all words in the book and their frequency of occurence
-// wordListMap["chocolate"] -> 3 means that word occured three times
+// wordListMap["chocolate"] -> 3 means that word occurred three times
 var wordListMap map[string]int
 
 // paragraph buffer
@@ -70,23 +70,15 @@ var pbuf []string
 var wbuf []string
 
 // working dictionary
-var wdic []string // working dictionary inc. goodwords.txt
+var wdic []string // working dictionary inc. good words
 
 // heMap and beMap maps map word sequences to relative frequency of occurence
 // higher values mean more frequently seen
 var heMap map[string]int
 var beMap map[string]int
 
-//
-var runlog []string // log for complete pptext run
-
 var scannoWordlist []string // scanno word list
 var goodWordlist []string // good word list specified by user
-
-func init() {
-	heMap = make(map[string]int)
-	beMap = make(map[string]int)
-}
 
 /* ********************************************************************** */
 /*                                                                        */
@@ -134,9 +126,10 @@ func readText(infile string) []string {
 	return wb
 }
 
-// saves working buffer
+// saves report to user-specified file
+// 
 func saveText(a []string, outfile string, noBOM bool, useLF bool) {
-	f2, err := os.Create(outfile)
+	f2, err := os.Create(outfile)  // specified report file for text output
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -149,8 +142,72 @@ func saveText(a []string, outfile string, noBOM bool, useLF bool) {
 			fmt.Fprintf(f2, "%s\n", line)
 		} else {
 			s := strings.Replace(line, "\n", "\r\n", -1)
+			// remove any HTML markup tokens
+			re := regexp.MustCompile(`[☰☱☲☳☴☵☶☷]`)  // strip any tokens for HTML
+			s = re.ReplaceAllString(s, "")
 			fmt.Fprintf(f2, "%s\r\n", s)
 		}
+	}
+}
+
+
+
+var HHEAD = []string{
+"<html>",
+"<head>",
+"<meta charset=\"utf-8\">",
+"<meta name=viewport content=\"width=device-width, initial-scale=1\">",
+"<title>pptext report</title>",
+"<style type=\"text/css\">",
+"body { margin-left: 1em;}",
+".red { color:red; background-color: #FFFFAA; }",
+".green { color:green; background-color: #FFFFAA; }",
+".black { color:black; }",
+".dim { color:#999999; }",
+"</style>",
+"</head>",
+"<body>",
+"<pre>"}
+
+var HFOOT = []string{
+"</pre>",
+"</body>",
+"</html>"}
+
+// saves HTML report to report.html
+// 
+func saveHtml(a []string, outfile string, noBOM bool, useLF bool) {
+	f2, err := os.Create(outfile)  // specified report file for text output
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f2.Close()
+	for _, line := range HHEAD {
+		s := strings.Replace(line, "\n", "\r\n", -1)
+		fmt.Fprintf(f2, "%s\r\n", s)
+	}
+	// as I emit the HTML, look for predefined tokens that generate spans
+	// or other info.
+	// ☰ <style class='red'>
+	// ☱ <style class='green'>
+	// ☲ <style class='dim'>
+	// ☳
+	// ☴
+	// ☵
+	// ☶
+	// ☷ </style>
+	for _, line := range a {
+		s := strings.Replace(line, "\n", "\r\n", -1)
+		s = strings.Replace(s, "☰", "<span class='red'>", -1)
+		s = strings.Replace(s, "☱", "<span class='green'>", -1)
+		s = strings.Replace(s, "☲", "<span class='dim'>", -1)
+		s = strings.Replace(s, "☳", "<span class='black'>", -1)
+		s = strings.Replace(s, "☷", "</span>", -1)
+		fmt.Fprintf(f2, "%s\r\n", s)
+	}
+	for _, line := range HFOOT {
+		s := strings.Replace(line, "\n", "\r\n", -1)
+		fmt.Fprintf(f2, "%s\r\n", s)
 	}
 }
 
@@ -397,8 +454,12 @@ func parawalk() {
 // limited to “, ”, ‘, ’
 // doesn't handle «, ‟, ‹, ⸌, ⸜, ⸠ as in etext 58423
 
-func doScan() {
+func doScan() []string {
 	nreports := 0
+	localrsx := []string{}
+	localrsx = append(localrsx, fmt.Sprintf("********************************************************************************"))
+	localrsx = append(localrsx, fmt.Sprintf("* %-76s *", "PUNCTUATION SCAN REPORT"))
+	localrsx = append(localrsx, fmt.Sprintf("********************************************************************************"))
 	// scan each paragraph
 	for n, p := range lpb {
 		stk := ""                  // new stack for each line
@@ -411,7 +472,7 @@ func doScan() {
 				// open double quote. check for consecutive open DQ
 				r2, _ := utf8.DecodeLastRuneInString(stk)
 				if r2 == '“' {
-					query = append(query, "[CODQ] consec open double quote")
+					query = append(query, "query: consec open double quote")
 				}
 				stk += string('“')
 			}
@@ -419,10 +480,10 @@ func doScan() {
 				// close double quote. check for consecutive close DQ or unmatched
 				r2, _ := utf8.DecodeLastRuneInString(stk)
 				if r2 == '”' {
-					query = append(query, "[CCDQ] consec close double quote:")
+					query = append(query, "query: consec close double quote:")
 				}
 				if r2 != '“' {
-					query = append(query, "[UCDQ] unmatched close double quote:")
+					query = append(query, "query: unmatched close double quote:")
 				}
 				stk = strings.TrimSuffix(stk, "“")
 			}
@@ -431,7 +492,7 @@ func doScan() {
 				// open single quote. check for consecutive open SQ
 				r2, _ := utf8.DecodeLastRuneInString(stk)
 				if r2 == '‘' {
-					query = append(query, "[COSQ] consec open single quote")
+					query = append(query, "query: consec open single quote")
 				}
 				stk += string('‘')
 			}
@@ -463,7 +524,7 @@ func doScan() {
 				}
 			}
 			if !cpara {
-				query = append(query, fmt.Sprintf("[UCPA] unclosed paragraph"))
+				query = append(query, fmt.Sprintf("query: unclosed paragraph"))
 			}
 		}
 		// save any query/reports, one per paragraph
@@ -486,30 +547,38 @@ func doScan() {
 				p = p[size:]
 			}
 
-			rs = append(rs, fmt.Sprintf("%s\n  %s\n", query[0], s2))
-
-			// rs = append(rs, fmt.Sprintf("%s\n  %s\n", query[0], p))
+			// save this query
+			localrsx = append(localrsx, fmt.Sprintf("☳%s☷\n  ☱%s☷\n", query[0], s2))
 			nreports++
 		}
 	}
 	if nreports == 0 {
-		rs = append(rs, "  no punctuation scan queries reported")
+		localrsx = append(localrsx, "  no punctuation scan queries reported")
+		localrsx = append(localrsx, "☷")  // FIXME </style>
+		localrsx = append([]string{"☲"}, localrsx...)  // FIXME dim
+	} else { // something was reported
+		localrsx = append(localrsx, "☷")  // FIXME </style>
+		localrsx = append([]string{"☳"}, localrsx...)  // FIXME black
 	}
+	return localrsx
 }
 
-func puncScan() {
-	rs = rs[:0] // empty rs to start aggregation
-	rs = append(rs, fmt.Sprintf("\n********************************************************************************"))
-	rs = append(rs, fmt.Sprintf("* %-76s *", "PUNCTUATION SCAN REPORT"))
-	rs = append(rs, fmt.Sprintf("********************************************************************************"))
+func puncScan() []string {
+	rs := []string{} // local rs to start aggregation
+
 
 	// get a copy of the paragraph buffer to edit in place
 	lpb = make([]string, len(pbuf))
 	copy(lpb, pbuf)
 	if straightCurly() { // check for mixed style
-		rs = append(rs, "  mixed straight and curly quotes. punctuation scan not done")
-		pptr = append(pptr, rs...)
-		return
+		rs = append(rs, "********************************************************************************")
+		rs = append(rs, "* PUNCTUATION SCAN                                                             *")
+		rs = append(rs, "********************************************************************************")
+		rs = append(rs, "")		
+		rs = append(rs, "  ☰mixed straight and curly quotes.☷ punctuation scan not done")
+		rs = append(rs, "☷")  // FIXME </style>
+		rs = append([]string{"☳"}, rs...)  // FIXME black
+		return rs
 	}
 	pluralPossessive() // horses’ becomes horses◳
 	internals()        // protect internal '’' characters as in contractions
@@ -517,10 +586,9 @@ func puncScan() {
 	ingResolve()       // resolve -ing words that are contracted
 	wordQuotes()       // apparent quoted words or two-word phrases
 	properNames()      // protect proper names
-	doScan()           // scan quotes and report
-
-	pptr = append(pptr, rs...)  // combine local reports with main
-
+	t := doScan()           // scan quotes and report, returns []string
+	rs = append(rs, t...)
+	return rs
 }
 
 /* ********************************************************************** */
@@ -536,11 +604,11 @@ func lookup(wd []string, word string) bool {
 
 // spellcheck returns list of suspect words, list of ok words in text
 
-func spellCheck(wd []string) ([]string, []string) {
-	rs = rs[:0] // empty rs to start aggregation
-	rs = append(rs, fmt.Sprintf("\n********************************************************************************"))
-	rs = append(rs, fmt.Sprintf("* %-76s *", "SPELLCHECK REPORT"))
-	rs = append(rs, fmt.Sprintf("********************************************************************************"))
+func spellCheck(wd []string) ([]string, []string, []string) {
+	rsx := []string{} // empty rsx to start aggregation
+	rsx = append(rsx, fmt.Sprintf("\n********************************************************************************"))
+	rsx = append(rsx, fmt.Sprintf("* %-76s *", "SPELLCHECK REPORT"))
+	rsx = append(rsx, fmt.Sprintf("********************************************************************************"))
 
 	okwordlist := make(map[string]int) // cumulative words OK by successive tests
 	var willdelete []string            // words to be deleted from wordlist
@@ -553,7 +621,7 @@ func spellCheck(wd []string) ([]string, []string) {
 		wlmLocal[swd] = v
 	}
 
-	rs = append(rs, fmt.Sprintf("  unique words in text: %d words", len(wlmLocal)))
+	rsx = append(rsx, fmt.Sprintf("  ☲unique words in text: %d words", len(wlmLocal)))
 
 	for word, count := range wlmLocal {
 		ip := sort.SearchStrings(wd, word)   // where it would insert
@@ -564,7 +632,7 @@ func spellCheck(wd []string) ([]string, []string) {
 		}
 	}
 
-	rs = append(rs, fmt.Sprintf("  approved by dictionary: %d words", len(willdelete)))
+	rsx = append(rsx, fmt.Sprintf("  approved by dictionary: %d words", len(willdelete)))
 
 	// fmt.Printf("%+v\n", willdelete)
 	// os.Exit(1)
@@ -597,7 +665,7 @@ func spellCheck(wd []string) ([]string, []string) {
 		}
 	}
 
-	rs = append(rs, fmt.Sprintf("  approved by depossessive: %d words", len(willdelete)))
+	rsx = append(rsx, fmt.Sprintf("  approved by depossessive: %d words", len(willdelete)))
 
 	// delete words that have been OKd by their lowercase form being in the dictionary
 	for _, word := range willdelete {
@@ -619,7 +687,7 @@ func spellCheck(wd []string) ([]string, []string) {
 		}
 	}
 
-	rs = append(rs, fmt.Sprintf("  approved by lowercase form: %d words", len(willdelete)))
+	rsx = append(rsx, fmt.Sprintf("  approved by lowercase form: %d words", len(willdelete)))
 
 	// delete words that have been OKd by their lowercase form being in the dictionary
 	for _, word := range willdelete {
@@ -657,7 +725,7 @@ func spellCheck(wd []string) ([]string, []string) {
 		}
 	}
 
-	rs = append(rs, fmt.Sprintf("  approved by dehyphenation: %d words", len(willdelete)))
+	rsx = append(rsx, fmt.Sprintf("  approved by dehyphenation: %d words", len(willdelete)))
 
 	// delete words that have been OKd by dehyphenation
 	for _, word := range willdelete {
@@ -679,7 +747,7 @@ func spellCheck(wd []string) ([]string, []string) {
 		}
 	}
 
-	rs = append(rs, fmt.Sprintf("  approved pure numerics: %d words", len(willdelete)))
+	rsx = append(rsx, fmt.Sprintf("  approved pure numerics: %d words", len(willdelete)))
 	// delete words that are entirely numeric
 	for _, word := range willdelete {
 		delete(wlmLocal, word)
@@ -700,7 +768,7 @@ func spellCheck(wd []string) ([]string, []string) {
 		}
 	}
 
-	rs = append(rs, fmt.Sprintf("  approved by frequency: %d words", len(willdelete)))
+	rsx = append(rsx, fmt.Sprintf("  approved by frequency: %d words", len(willdelete)))
 	// delete words approved by frequency
 	for _, word := range willdelete {
 		delete(wlmLocal, word)
@@ -716,35 +784,44 @@ func spellCheck(wd []string) ([]string, []string) {
 
 	// show each word in context
 	var sw []string // suspect words
-	rs = append(rs, "--------------------------------------------------------------------------------")
-	rs = append(rs, fmt.Sprintf("Suspect words"))
+	rsx = append(rsx, "--------------------------------------------------------------------------------☷")
+	rsx = append(rsx, fmt.Sprintf("Suspect words"))
 	for _, word := range keys {
 		word = strings.Replace(word, "'", "’", -1)
 		sw = append(sw, word)                    // simple slice of only the word
-		rs = append(rs, fmt.Sprintf("%s", word)) // word we will show in context
+		rsx = append(rsx, fmt.Sprintf("%s", word)) // word we will show in context
 		// show word in text
 		for n, line := range wbuf {
 			for _, t2 := range lwl[n] {
 				if t2 == word {
-					rs = append(rs, fmt.Sprintf("  %6d: %s", n, line))
+					re := regexp.MustCompile(`(`+word+`)`)
+					line = re.ReplaceAllString(line, `☰$1☷`)
+					rsx = append(rsx, fmt.Sprintf("  %6d: %s", n, line))
 				}
 			}
 		}
-		rs = append(rs, "")
+		rsx = append(rsx, "")
 	}
 
-	rs = append(rs, fmt.Sprintf("  good words in text: %d words", len(okwordlist)))
-	rs = append(rs, fmt.Sprintf("  suspect words in text: %d words", len(sw)))
-
-	pptr = append(pptr, rs...) // combine reports
+	rsx = append(rsx, fmt.Sprintf("  ☲good words in text: %d words", len(okwordlist)))
+	rsx = append(rsx, fmt.Sprintf("  suspect words in text: %d words☷", len(sw)))
 
 	var ok []string
 	for word, _ := range okwordlist {
 		ok = append(ok, word)
 	}
 
+	if len(sw) == 0 {
+		rsx = append(rsx, "☷")  // FIXME </style>
+		rsx = append([]string{"☲"}, rsx...)  // FIXME dim
+	} else { // something was reported
+		rsx = append(rsx, "☷")  // FIXME </style>
+		rsx = append([]string{"☳"}, rsx...)  // FIXME black
+	}
+
 	// return sw: list of suspect words and ok: list of good words in text
-	return sw, ok
+	// and rsx, the report
+	return sw, ok, rsx
 }
 
 /* ********************************************************************** */
@@ -895,7 +972,9 @@ func prettyPrint(v interface{}) (err error) {
 /* ********************************************************************** */
 
 // curly quote check (positional, not using a state machine)
-func tcCurlyQuoteCheck(wb []string) {
+func tcCurlyQuoteCheck(wb []string) []string {
+	rs := []string{}
+
 	rs = append(rs, "\n----- curly quote check ------------------------------------------------------\n")
 	count := 0
 	ast := 0
@@ -930,8 +1009,13 @@ func tcCurlyQuoteCheck(wb []string) {
 	}
 
 	if count == 0 {
-		rs = append(rs, "  no curly quote suspects found in text.")
+		rs = append(rs, "  no curly quote (context) suspects found in text.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs	
 }
 
 // scanno check
@@ -939,7 +1023,8 @@ func tcCurlyQuoteCheck(wb []string) {
 // look for that word on each line of the book
 // scannos list in pptext.dat
 //   from https://www.pgdp.net/c/faq/stealth_scannos_eng_common.txt
-func scannoCheck(wb []string) {
+func scannoCheck(wb []string) []string {
+	rs := []string{}
 	rs = append(rs, "\n----- scanno check -----------------------------------------------------------\n")
 	count := 0
 	for _, scannoword := range scannoWordlist { // each scanno candidate
@@ -959,11 +1044,18 @@ func scannoCheck(wb []string) {
 	}
 	if count == 0 {
 		rs = append(rs, "  no suspected scannos found in text.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs	
 }
 
 // dash check
-func tcDashCheck(pb []string) {
+func tcDashCheck(pb []string) []string {
+	rs := []string{}
+
 	rs = append(rs, "\n----- dash check -------------------------------------------------------------\n")
 	re := regexp.MustCompile(`(— )|( —)|(—-)|(-—)|(- -)|(— -)|(- —)`)
 	count := 0
@@ -979,11 +1071,17 @@ func tcDashCheck(pb []string) {
 	}
 	if count == 0 {
 		rs = append(rs, "  no dash check suspects found in text.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs
 }
 
 // ellipsis checks
-func tcEllipsisCheck(wb []string) {
+func tcEllipsisCheck(wb []string) []string {
+	rs := []string{}
 	rs = append(rs, "\n----- ellipsis check ---------------------------------------------------------\n")
 
 	re1 := regexp.MustCompile(`[^.]\.\.\. `)   // give... us some pudding
@@ -1007,12 +1105,18 @@ func tcEllipsisCheck(wb []string) {
 	}
 	if count == 0 {
 		rs = append(rs, "  no ellipsis suspects found in text.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs
 }
 
 // repeated word check
 // works against paragraph buffer
-func tcRepeatedWords(pb []string) {
+func tcRepeatedWords(pb []string) []string {
+	rs := []string{}
 	rs = append(rs, "\n----- repeated word check ----------------------------------------------------\n")
 	count := 0
 	for _, line := range pb {
@@ -1054,7 +1158,12 @@ func tcRepeatedWords(pb []string) {
 	}
 	if count == 0 {
 		rs = append(rs, "  no repeated words found in text.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs	
 }
 
 // definitions from Project Gutenberg
@@ -1068,7 +1177,8 @@ const (
 // this line has no leading space, has some text, length of line less than
 // 55 characters, following line has some text.
 // all lengths count runes
-func tcShortLines(wb []string) {
+func tcShortLines(wb []string) []string {
+	rs := []string{}
 	rs = append(rs, "\n----- short lines check ------------------------------------------------------\n")
 	count := 0
 	for n, line := range wb {
@@ -1090,11 +1200,17 @@ func tcShortLines(wb []string) {
 	}
 	if count == 0 {
 		rs = append(rs, "  no short lines found in text.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs
 }
 
 // all lengths count runes
-func tcLongLines(wb []string) {
+func tcLongLines(wb []string) []string {
+	rs := []string{}
 	rs = append(rs, "\n----- long lines check ------------------------------------------------------\n")
 	count := 0
 	for n, line := range wb {
@@ -1105,12 +1221,25 @@ func tcLongLines(wb []string) {
 			count++
 		}
 	}
+
+	if count > 10 {
+		rs = rs[:1]  // don't show any
+		rs = append(rs, fmt.Sprintf("%5d long lines in text. not reporting them.", count))
+	}
 	if count == 0 {
 		rs = append(rs, "  no long lines found in text.")
 	}
+	if count == 0 || count > 10 {
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
+	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs
 }
 
-func tcAsteriskCheck(wb []string) {
+func tcAsteriskCheck(wb []string) []string {
+	rs := []string{}
 	rs = append(rs, "\n----- asterisk checks --------------------------------------------------------\n")
 	count := 0
 	for n, line := range wb {
@@ -1121,11 +1250,17 @@ func tcAsteriskCheck(wb []string) {
 	}
 	if count == 0 {
 		rs = append(rs, "  no unexpected asterisks found in text.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs
 }
 
 // do not report adjacent spaces that start or end a line
-func tcAdjacentSpaces(wb []string) {
+func tcAdjacentSpaces(wb []string) []string {
+	rs := []string{}
 	rs = append(rs, "\n----- adjacent spaces check --------------------------------------------------\n")
 	count := 0
 	for n, line := range wb {
@@ -1141,11 +1276,17 @@ func tcAdjacentSpaces(wb []string) {
 	}
 	if count == 0 {
 		rs = append(rs, "  no adjacent spaces found in text.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs	
 }
 
 //
-func tcTrailingSpaces(wb []string) {
+func tcTrailingSpaces(wb []string) []string {
+	rs := []string{}
 	rs = append(rs, "\n----- trailing spaces check ---------------------------------------------------\n")
 	count := 0
 	for n, line := range wb {
@@ -1156,7 +1297,12 @@ func tcTrailingSpaces(wb []string) {
 	}
 	if count == 0 {
 		rs = append(rs, "  no trailing spaces found in text.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs		
 }
 
 type kv struct {
@@ -1169,7 +1315,8 @@ var m = map[rune]int{} // a map for letter frequency counts
 // report infrequently-occuring characters (runes)
 // threshold set to fewer than 10 occurences or fewer than #lines / 100
 // do not report numbers
-func tcLetterChecks(wb []string) {
+func tcLetterChecks(wb []string) []string {
+	rs := []string{}
 	rs = append(rs, "\n----- character checks --------------------------------------------------------\n")
 	count := 0
 	for _, line := range wb {  // each line in working buffer
@@ -1217,13 +1364,19 @@ func tcLetterChecks(wb []string) {
 	}
 	if count == 0 {
 		rs = append(rs, "  no character checks reported.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs
 }
 
 // spacing check
 // any spacing is okay until the first 4-space gap. Then
 // expecting 4-1-2 or 4-2 variations only
-func tcSpacingCheck(wb []string) {
+func tcSpacingCheck(wb []string) []string {
+	rs := []string{}
 	s := ""
 	count := 0
 	rs = append(rs, "\n----- spacing pattern ---------------------------------------------------------\n")
@@ -1282,10 +1435,16 @@ func tcSpacingCheck(wb []string) {
 			rs = append(rs, "  no spacing anomalies reported.")
 		}
 	*/
+	// always dim
+	rs = append([]string{"☲"}, rs...)  // FIXME dim
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs		
 }
 
 // book-level checks
-func tcBookLevel(wb []string) {
+func tcBookLevel(wb []string) []string {
+	rs := []string{}
+
 	count := 0
 	rs = append(rs, "\n----- book level checks -----------------------------------------------\n")
 
@@ -1377,16 +1536,21 @@ func tcBookLevel(wb []string) {
 	}
 	if countm1 > 0 && countm2 > 0 {
 		rs = append(rs, "  both apostrophes and turned commas appear in text")
+		count++
 	}
-
-	// summary
 	if count == 0 {
 		rs = append(rs, "  no book level checks reported.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs
 }
 
 // paragraph-level checks
-func tcParaLevel() {
+func tcParaLevel() []string {
+	rs := []string{}
 	count := 0
 	const RLIMIT int = 5
 
@@ -1619,18 +1783,19 @@ func tcParaLevel() {
 		rs = append(rs, fmt.Sprintf("    ...%d more", sscnt-RLIMIT))
 	}
 
-	// ------------------------------------------------------------------------
-
-	// ------------------------------------------------------------------------
-
-	// summary
 	if count == 0 {
 		rs = append(rs, "  no paragraph level checks reported.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs	
 }
 
 // tests extracted from gutcheck that aren't already included
-func tcGutChecks(wb []string) {
+func tcGutChecks(wb []string) []string {
+	rs := []string{}
 	rs = append(rs, "\n----- special situations checks -----------------------------------------------\n")
 
 	re0000 := regexp.MustCompile(`\[[^IG\d]`)                                 // allow Illustration, Greek, or number
@@ -1842,9 +2007,7 @@ func tcGutChecks(wb []string) {
 		rs = append(rs, fmt.Sprintf("note: source file not plain text. %d lines with markup", abandonedTagCount))
 	}
 
-	if len(gcreports) == 0 {
-		rs = append(rs, "  no special situation reports.")
-	} else {
+	if len(gcreports) > 0 {
 		rrpt_last := ""
 		for _, rpt := range gcreports {
 			if rpt.rpt != rrpt_last {
@@ -1855,34 +2018,41 @@ func tcGutChecks(wb []string) {
 			rrpt_last = rpt.rpt
 		}
 	}
+	if len(gcreports) == 0 {
+		rs = append(rs, "   no special situation reports.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
+	}
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs
 }
 
 // text checks
 // a series of tests either on the working buffer (line at a time)
 // or the paragraph buffer (paragraph at a time)
-func textCheck() {
-	rs = rs[:0] // empty rs to start aggregation
+func textCheck() []string {
+	rs = []string{} // empty local rs to start aggregation
 	rs = append(rs, fmt.Sprintf("\n********************************************************************************"))
 	rs = append(rs, fmt.Sprintf("* %-76s *", "TEXT ANALYSIS REPORT"))
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
 
-	tcAsteriskCheck(wbuf)
-	tcAdjacentSpaces(wbuf)
-	tcTrailingSpaces(wbuf)
-	tcLetterChecks(wbuf)
-	tcSpacingCheck(wbuf)
-	tcShortLines(wbuf)
-	tcLongLines(wbuf)
-	tcRepeatedWords(pbuf)
-	tcEllipsisCheck(wbuf)
-	tcDashCheck(pbuf)
-	scannoCheck(wbuf)
-	tcCurlyQuoteCheck(wbuf)
-	tcGutChecks(wbuf)
-	tcBookLevel(wbuf)
-	tcParaLevel()
-
-	pptr = append(pptr, rs...)
+	rs = append(rs, tcAsteriskCheck(wbuf)...)
+	rs = append(rs, tcAdjacentSpaces(wbuf)...)
+	rs = append(rs, tcTrailingSpaces(wbuf)...)
+	rs = append(rs, tcLetterChecks(wbuf)...)
+	rs = append(rs, tcSpacingCheck(wbuf)...)
+	rs = append(rs, tcShortLines(wbuf)...)
+	rs = append(rs, tcLongLines(wbuf)...)
+	rs = append(rs, tcRepeatedWords(pbuf)...)
+	rs = append(rs, tcEllipsisCheck(wbuf)...)
+	rs = append(rs, tcDashCheck(pbuf)...)
+	rs = append(rs, scannoCheck(wbuf)...)
+	rs = append(rs, tcCurlyQuoteCheck(wbuf)...)
+	rs = append(rs, tcGutChecks(wbuf)...)
+	rs = append(rs, tcBookLevel(wbuf)...)
+	rs = append(rs, tcParaLevel()...)
+	return rs
 }
 
 /*
@@ -2028,7 +2198,7 @@ func minimum(a, b, c int) int {
 // iterate over every suspect word at least six runes long
 // case insensitive
 // looking for a good word in the text that is "near"
-func levencheck(okwords []string, suspects []string) {
+func levencheck(okwords []string, suspects []string) []string {
 	rs := []string{} // new empty array of strings for local aggregation
 	rs = append(rs, fmt.Sprintf("\n********************************************************************************"))
 	rs = append(rs, fmt.Sprintf("* %-76s *", "LEVENSHTEIN (EDIT DISTANCE) CHECKS"))
@@ -2083,6 +2253,8 @@ func levencheck(okwords []string, suspects []string) {
 					wordsonthisline := m2[n] // a set of words on this line
 					if _, ok := wordsonthisline[suspect]; ok {
 						if count == 0 {
+							re := regexp.MustCompile(`(`+suspect+`)`)
+							line = re.ReplaceAllString(line, `☰$1☷`)
 							rs = append(rs, fmt.Sprintf("  %6d: %s", n, line))
 						}
 						count += 1
@@ -2093,6 +2265,8 @@ func levencheck(okwords []string, suspects []string) {
 					wordsonthisline := m2[n] // a set of words on this line
 					if _, ok := wordsonthisline[okword]; ok {
 						if count == 0 {
+							re := regexp.MustCompile(`(`+okword+`)`)
+							line = re.ReplaceAllString(line, `☰$1☷`)							
 							rs = append(rs, fmt.Sprintf("  %6d: %s", n, line))
 						}
 						count += 1
@@ -2101,12 +2275,15 @@ func levencheck(okwords []string, suspects []string) {
 			}
 		}
 	}
-
-	pptr = append(pptr, rs...) // header and reports
 	if nreports == 0 {
-		pptr = append(pptr, "  no Levenshtein edit distance queries reported")
+		rs = append(rs, "  no Levenshtein edit distance queries reported")
+		rs = append(rs, "☷")  // FIXME </style>
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append(rs, "☷")  // FIXME </style>
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
-
+	return rs
 }
 
 /* ********************************************************************** */
@@ -2118,7 +2295,7 @@ func levencheck(okwords []string, suspects []string) {
 var wbs []string
 var wbl []string
 
-func jeebies() {
+func jeebies() []string {
 	rs := []string{} // new empty array of strings for local aggregation
 	rs = append(rs, fmt.Sprintf("\n********************************************************************************"))
 	rs = append(rs, fmt.Sprintf("* %-76s *", "JEEBIES REPORT"))
@@ -2376,8 +2553,12 @@ func jeebies() {
 	*/
 	if nreports == 0 {
 		rs = append(rs, "  no jeebies checks reported.")
+		rs = append([]string{"☲"}, rs...)  // FIXME dim
+	} else { // something was reported
+		rs = append([]string{"☳"}, rs...)  // FIXME black
 	}
-	pptr = append(pptr, rs...)
+	rs = append(rs, "☷")  // FIXME </style>
+	return rs
 }
 
 /* ********************************************************************** */
@@ -2443,6 +2624,9 @@ func readScannos(infile string) []string {
 // he word list and be word list in in pptext.dat bracketed by
 // *** BEGIN HE *** and *** END HE ***
 func readHeBe(infile string) {
+	heMap = make(map[string]int)
+	beMap = make(map[string]int)
+
 	file, err := os.Open(infile)
 	if err != nil {
 		log.Fatal(err)
@@ -2531,7 +2715,7 @@ func main() {
 	pptr = append(pptr, fmt.Sprintf("* %-76s *", "PPTEXT RUN REPORT"))
 	pptr = append(pptr, fmt.Sprintf("* %76s *", "started "+time.Now().In(loc).Format(time.RFC850)))
 	pptr = append(pptr, fmt.Sprintf("********************************************************************************"))
-	pptr = append(pptr, fmt.Sprintf("pptext version: %s", VERSION))
+	pptr = append(pptr, fmt.Sprintf("☲pptext version: %s", VERSION))
 
 	p = doparams() // parse command line parameters
 
@@ -2654,7 +2838,7 @@ func main() {
 	pptr = append(pptr, fmt.Sprintf("paragraphs: %d", len(pbuf)))
 
 	puncStyle = getPuncStyle()
-	pptr = append(pptr, fmt.Sprintf("punctuation style: %s", puncStyle))
+	pptr = append(pptr, fmt.Sprintf("punctuation style: %s☷", puncStyle))
 
 	/*************************************************************************/
 	/* begin individual tests                                                */
@@ -2662,26 +2846,27 @@ func main() {
 
 	// smart quote check
 	if p.Nosqc || puncStyle == "British" {
-		pptr = append(pptr, "")
-		pptr = append(pptr, "********************************************************************************")
+		pptr = append(pptr, "☲********************************************************************************")
 		pptr = append(pptr, "* PUNCTUATION SCAN                                                             *")
 		pptr = append(pptr, "********************************************************************************")
 		pptr = append(pptr, "")
 		if p.Nosqc {
-			pptr = append(pptr, "Punctuation Scan checks skipped")
+			pptr = append(pptr, "Punctuation Scan checks skipped☷")
 		} else {
-			pptr = append(pptr, "Punctuation Scan checks skipped (British-style quotes)")
+			pptr = append(pptr, "Punctuation Scan checks skipped (British-style quotes)☷")
 		}
 	} else {
 		// t1 := time.Now()
-		puncScan()
+		t := puncScan()
 		// t2 := time.Now()
+		pptr = append(pptr, t...)
 		// pptr = append(pptr, fmt.Sprintf("smart quote check took: %.2f seconds", t2.Sub(t1).Seconds()))
 	}
 
 	// spellcheck
 	// returns list of suspect words, ok words used in text
-	sw, okwords := spellCheck(wdic)
+	sw, okwords, rsx := spellCheck(wdic)
+	pptr = append(pptr, rsx...)
 
 	// levenshtein check
 	// compares all suspect words to all okwords in text
@@ -2694,20 +2879,26 @@ func main() {
 		pptr = append(pptr, "Levenshtein (edit-distance) checks skipped")
 	} else {
 		// t1 := time.Now()
-		levencheck(okwords, sw)
+		t := levencheck(okwords, sw)
+		pptr = append(pptr, t...)
 		// t2 := time.Now()
 		// pptr = append(pptr, fmt.Sprintf("Levenshtein (edit-distance) checks took %.2f seconds", t2.Sub(t1).Seconds()))
 	}
 
 	// text check
 	//
-	textCheck()
+	t := textCheck()
+	pptr = append(pptr, t...)
 
 	// jeebies looks for he/be errors
-	jeebies()
+	t = jeebies()
+	pptr = append(pptr, t...)
+
+	// note: remaining words in sw are suspects.
+	// they could be used to start a user-maintained persistent good word list
 
 	/*************************************************************************/
-	/* all tests complete. save results to specified report file and logfile */
+	/* all tests complete. save results to specified report file             */
 	/*************************************************************************/
 
 	pptr = append(pptr, "--------------------------------------------------------------------------------")
@@ -2717,13 +2908,5 @@ func main() {
 	pptr = append(pptr, fmt.Sprintf("execution time: %.2f seconds", t2.Sub(start).Seconds()))
 
 	saveText(pptr, p.Outfile, p.NoBOM, p.UseLF)
-
-	// remaining words in sw are suspects. conditionally generate a report
-	var s []string
-	if p.Experimental {
-		for _, word := range sw {
-			s = append(s, fmt.Sprintf("%s", word))
-		}
-		saveText(s, "logsuspects.txt", p.NoBOM, p.UseLF)
-	}
+	saveHtml(pptr, "report.html", p.NoBOM, p.UseLF)
 }
