@@ -1005,6 +1005,55 @@ func prettyPrint(v interface{}) (err error) {
 /*                                                                        */
 /* ********************************************************************** */
 
+//
+func tcHypConsistency(wb []string) []string {
+	rs := []string{}
+	rs = append(rs, "----- hyphenation consistency check -------------------------------------------")
+	rs = append(rs, "")
+
+	count := 0
+	for s, _ := range wordListMap {
+		if strings.Contains(s, "-") {
+			// hyphenated version present. check without
+			s2 := strings.Replace(s, "-", "", -1)
+			for t, _ := range wordListMap {
+				if t == s2 {
+					count++
+					rs = append(rs, fmt.Sprintf("%s (%d) <-> %s (%d)", s2, wordListMap[s2], s, wordListMap[s]))
+					sdone, s2done := false, false
+					for n, line := range wb {
+						re1 := regexp.MustCompile(`(\P{L}`+s+`\P{L})`)
+						if !sdone && re1.MatchString(line) {
+							line = re1.ReplaceAllString(line, `☰$1☷`)
+							rs = append(rs, fmt.Sprintf("%6d: %s", n, line))
+							sdone = true
+						}
+						re2 := regexp.MustCompile(`(\P{L}`+s2+`\P{L})`)
+						if !s2done && re2.MatchString(line) {
+							line = re2.ReplaceAllString(line, `☰$1☷`)							
+							rs = append(rs, fmt.Sprintf("%6d: %s", n, line))
+							s2done = true	
+						}
+						if sdone && s2done {
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	if count == 0 {
+		rs = append(rs, "  no hyphenation inconsistencies found.")
+		rs[0] = "☲" + rs[0]  // style dim
+	} else {
+		rs[0] = "☳" + rs[0]  // style black
+	}
+	rs = append(rs, "")
+	rs[len(rs)-1] += "☷" // close style
+	tcec += count
+	return rs	
+}
+
 // curly quote check (positional, not using a state machine)
 func tcCurlyQuoteCheck(wb []string) []string {
 	rs := []string{}
@@ -2135,7 +2184,8 @@ func textCheck() []string {
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
 	rs = append(rs, fmt.Sprintf("* %-76s *", "TEXT ANALYSIS REPORT"))
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
-
+	rs = append(rs, "")
+	rs = append(rs, tcHypConsistency(wbuf)...)
 	rs = append(rs, tcAsteriskCheck(wbuf)...)
 	rs = append(rs, tcAdjacentSpaces(wbuf)...)
 	rs = append(rs, tcTrailingSpaces(wbuf)...)
