@@ -1286,7 +1286,9 @@ func tcShortLines(wb []string) []string {
 			utf8.RuneCountInString(line) <= SHORTEST_PG_LINE &&
 			utf8.RuneCountInString(wb[n+1]) > 0 {
 			if count <= 10 {
-				rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
+				rs = append(rs, fmt.Sprintf("  %5d: ☰%s☷", n, line))
+				rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, wb[n+1]))
+				rs = append(rs, "")
 			}
 			count++
 		}
@@ -1296,11 +1298,11 @@ func tcShortLines(wb []string) []string {
 	}
 	if count == 0 {
 		rs = append(rs, "  no short lines found in text.")
+		rs = append(rs, "")
 		rs[0] = "☲" + rs[0]  // style dim
 	} else {
 		rs[0] = "☳" + rs[0]  // style black
 	}
-	rs = append(rs, "")
 	rs[len(rs)-1] += "☷" // close style
 	tcec += count
 	return rs
