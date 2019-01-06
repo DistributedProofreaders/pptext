@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.01.05"
+const VERSION string = "2019.01.06"
 
 var sw []string      // suspect words list
 
@@ -1235,33 +1235,14 @@ func tcRepeatedWords(pb []string) []string {
 		for n, _ := range t {
 			if n < len(t)-1 && t[n] == t[n+1] {
 				// find the repeated word on the line
-				cs := fmt.Sprintf("%s %s", t[n], t[n]) // only care if space-separated
+				cs := fmt.Sprintf(`(^|\P{L})(%s %s)(\P{L}|$)`, t[n], t[n]) // only care if space-separated
 				re := regexp.MustCompile(cs)
 				u := re.FindStringIndex(line)
 				if u != nil {
+					line = re.ReplaceAllString(line, "☰$1$2$3☷")
 					lsen := u[0] // these are character positions, not runes
-					rsen := u[1]
-					lsen -= 20
-					rsen += 20
-					if lsen < 0 {
-						lsen = 0
-					}
-					if rsen >= len(line) {
-						rsen = len(line) - 1
-					}
-					// now find sentinels at rune boundaries
-					for ok := true; ok; ok = !utf8.RuneStart(line[lsen]) {
-						lsen++
-					}
-					for ok := true; ok; ok = !utf8.RuneStart(line[rsen]) {
-						rsen--
-					}
-					// line[lsen:rsen] is a valid string
-					s := line[lsen:rsen]
-					// trim it to first, last space
-					ltrim := strings.Index(s, " ")
-					rtrim := strings.LastIndex(s, " ")
-					rs = append(rs, fmt.Sprintf("    [%s] %s", t[n], s[ltrim:rtrim]))
+					s := getParaSegment(line, lsen)
+					rs = append(rs, fmt.Sprintf("    [%s] %s", t[n], s))
 					count++
 				}
 			}
@@ -1483,10 +1464,10 @@ func tcLetterChecks(wb []string) []string {
 			rs = append(rs, fmt.Sprintf("%s", strconv.QuoteRune(kv.Key)))
 			// rs = append(rs, fmt.Sprintf("%s", kv.Key))
 			count += 1
-			count += 1
 			for n, line := range wb {
 				if strings.ContainsRune(line, kv.Key) {
 					if reportcount < 10 {
+						line = strings.Replace(line, string(kv.Key), "☰"+string(kv.Key)+"☷", -1)
 						rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
 					}
 					if reportcount == 10 {
