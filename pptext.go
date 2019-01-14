@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.01.08"
+const VERSION string = "2019.01.13"
 
 var sw []string // suspect words list
 
@@ -1012,7 +1012,7 @@ func getParaSegment(s string, where int) string {
 	if zrs == "" { // we are given a center point as a byte position
 		crp := 0 // center run position as index into rps
 		for i := 0; i < len(rps); i++ {
-			if rps[i].rpp == where {
+			if rps[i].rpp <= where {
 				crp = i
 			}
 		}
@@ -1307,22 +1307,29 @@ func tcRepeatedWords(pb []string) []string {
 	rs = append(rs, "")
 
 	count := 0
-	for _, line := range pb {
-		t := getWordsOnLine(line)
-		for n, _ := range t {
-			if n < len(t)-1 && t[n] == t[n+1] {
-				// find the repeated word on the line
-				cs := fmt.Sprintf(`(^|\P{L})(%s %s)(\P{L}|$)`, t[n], t[n]) // only care if space-separated
-				re := regexp.MustCompile(cs)
-				u := re.FindStringIndex(line)
-				if u != nil {
-					linex := re.ReplaceAllString(line, "☰$1$2$3☷")
-					lsen := u[0] // these are character positions, not runes
-					s := getParaSegment(linex, lsen)
-					rs = append(rs, fmt.Sprintf("    [%s] %s", t[n], s))
-					count++
-				}
+	for _, para := range pb {  // go over each paragraph
+		// re := regexp.MustCompile(fmt.Sprintf(`(^|\P{L})(\p{L}) (\p{L})(\P{L}|$)`))
+		// re := regexp.MustCompile(`\w+\s\w+`)
+		// at least two letter words separated by a space
+		// re := regexp.MustCompile(`(^|\P{L})(\p{L}\p{L}+) (\p{L}\p{L}+)(\P{L}|$)`)
+		// re := regexp.MustCompile(`(?:^|\P{L})\p{L}\p{L}+ \p{L}\p{L}+(?:\P{L}|$)`)
+		re := regexp.MustCompile(`\p{L}\p{L}+ \p{L}\p{L}+`)
+		start := 0
+		for u := re.FindStringIndex(para[start:]); u != nil; {
+			pair := (para[start+u[0]:start+u[1]])
+			spair := strings.Split(pair, " ")
+			if len(spair) == 2 && spair[0] == spair[1] {
+				center := ((start+u[0])+(start+u[1]))/2
+				t1 := para[:start+u[0]]
+				t2 := para[start+u[0]:start+u[1]]
+				t3 := para[start+u[1]:]
+				tmppara := t1 + "☰" + t2 + "☷" + t3
+				s := getParaSegment(tmppara, center)
+				rs = append(rs, s)
 			}
+			start += u[0] + len(spair[0])
+			u = re.FindStringIndex(para[start:])
+			count++
 		}
 	}
 	if count == 0 {
