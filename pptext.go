@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.01.13"
+const VERSION string = "2019.01.14"
 
 var sw []string // suspect words list
 
@@ -903,6 +903,7 @@ func spellCheck(wd []string) ([]string, []string, []string) {
 					loc := re.FindStringIndex(line)
 					line = getParaSegment(line, loc[0])
 					rs = append(rs, fmt.Sprintf("  %6d: %s", n, line))
+					break
 				}
 			}
 		}
