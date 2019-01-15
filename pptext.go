@@ -897,8 +897,8 @@ func spellCheck(wd []string) ([]string, []string, []string) {
 		for n, line := range wbuf { // every line
 			for _, t2 := range lwl[n] { // every word on that line
 				if t2 == word { // it is here
-					re := regexp.MustCompile(`(` + word + `)`)
-					line = re.ReplaceAllString(line, `☰$1☷`)
+					re := regexp.MustCompile(`(^|\P{L})(` + word + `)(\P{L}|$)`)
+					line = re.ReplaceAllString(line, `$1☰$2☷$3`)
 					re = regexp.MustCompile(`☰`)
 					loc := re.FindStringIndex(line)
 					line = getParaSegment(line, loc[0])
