@@ -1216,7 +1216,7 @@ func scannoCheck(wb []string) []string {
 				}
 			}
 		}
-		if !p.Verbose && ast >= 5 {
+		if !p.Verbose && ast > 5 {
 			rs = append(rs, fmt.Sprintf("         ... %d more", ast-5))
 		}
 	}
@@ -1558,10 +1558,10 @@ func tcLetterChecks(wb []string) []string {
 						rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
 					}
 					reportcount++
-					if !p.Verbose && reportcount == 2 {
-						rs = append(rs, fmt.Sprintf("    ...more"))
-					}
 				}
+			}
+			if !p.Verbose && reportcount > 2 {
+				rs = append(rs, fmt.Sprintf("    ... %d more", reportcount - 2))
 			}
 		}
 	}
