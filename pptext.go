@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.01.14"
+const VERSION string = "2019.01.15"
 
 var sw []string // suspect words list
 
@@ -122,7 +122,7 @@ var BOM = string([]byte{239, 187, 191}) // UTF-8 Byte Order Mark
 
 // readLn returns a single line (without the ending \n)
 // from the input buffered reader.
-// An error is returned iff there is an error with the
+// An error is returned if there is an error with the
 // buffered reader.
 func readLn(r *bufio.Reader) (string, error) {
 	var (
@@ -653,6 +653,7 @@ func lookup(wd []string, word string) bool {
 }
 
 // spellcheck returns list of suspect words, list of ok words in text
+// note: in the wordlists and pptext.dat, only straight apostrophes are used.
 
 func spellCheck(wd []string) ([]string, []string, []string) {
 	pptr = append(pptr, "☳<a name='spell'></a>")
@@ -668,7 +669,7 @@ func spellCheck(wd []string) ([]string, []string, []string) {
 	// local wlmLocal is pruned as words are approved during spellcheck
 	wlmLocal := make(map[string]int, len(wordListMap)) // copy of all words in the book, with freq
 	for k, v := range wordListMap {
-		swd := strings.Replace(k, "’", "'", -1) // apostrophes straight in pptext.dat
+		swd := strings.Replace(k, "’", "'", -1) // straighten apostrophes for spell check
 		wlmLocal[swd] = v
 	}
 
@@ -745,6 +746,29 @@ func spellCheck(wd []string) ([]string, []string, []string) {
 	rs = append(rs, fmt.Sprintf("  approved by plural/singluar: %d words", len(willdelete)))
 
 	// delete words that have been OKd by their singular form being in the dictionary
+	for _, word := range willdelete {
+		delete(wlmLocal, word)
+	}
+	willdelete = nil // clear the list of words to delete
+
+	/* =============================================================================== */
+
+	// check words ok by dropping "'ll" as in that'll or there'll
+	re = regexp.MustCompile(`'ll$`)
+	for word, count := range wlmLocal {
+		if re.MatchString(word) {  // ends with 'll
+			testword := word[:len(word)-3]  // drop the 'll
+			ip := sort.SearchStrings(wd, testword)   // where it would insert
+			if ip != len(wd) && wd[ip] == testword { // true if we found it
+				okwordlist[word] = count // remember as good word
+				willdelete = append(willdelete, word)
+			}
+		}
+	}
+
+	rs = append(rs, fmt.Sprintf("  approved by 'll contraction: %d words", len(willdelete)))
+
+	// delete words that have been OKd by their 'll form being in the dictionary
 	for _, word := range willdelete {
 		delete(wlmLocal, word)
 	}
@@ -1308,11 +1332,7 @@ func tcRepeatedWords(pb []string) []string {
 
 	count := 0
 	for _, para := range pb {  // go over each paragraph
-		// re := regexp.MustCompile(fmt.Sprintf(`(^|\P{L})(\p{L}) (\p{L})(\P{L}|$)`))
-		// re := regexp.MustCompile(`\w+\s\w+`)
 		// at least two letter words separated by a space
-		// re := regexp.MustCompile(`(^|\P{L})(\p{L}\p{L}+) (\p{L}\p{L}+)(\P{L}|$)`)
-		// re := regexp.MustCompile(`(?:^|\P{L})\p{L}\p{L}+ \p{L}\p{L}+(?:\P{L}|$)`)
 		re := regexp.MustCompile(`\p{L}\p{L}+ \p{L}\p{L}+`)
 		start := 0
 		for u := re.FindStringIndex(para[start:]); u != nil; {
@@ -1746,6 +1766,22 @@ func tcBookLevel(wb []string) []string {
 		rs = append(rs, "  both apostrophes and turned commas appear in text")
 		count++
 	}
+
+	// check for repeated lines at least 5 characters long.
+	limit := len(wb)-1
+	for n, _ := range wb {
+		if n == limit {
+			break
+		}
+		if wb[n] == wb[n+1] && len(wb[n]) > 5 {
+			rs = append(rs, "  repeated line:")
+			rs = append(rs, fmt.Sprintf("%8d,%d: %s", n, n+1, wb[n]))
+			count++
+		}
+	}
+
+	// all tests complete
+
 	if count == 0 {
 		rs = append(rs, "  no book level checks reported.")
 		rs[0] = "☲" + rs[0] // style dim
@@ -1870,7 +1906,7 @@ func tcParaLevel() []string {
 	// ------------------------------------------------------------------------
 	// check: unconverted double-dash/em-dash, long dash error,
 	//        or double-emdash broken at end of line
-	re = regexp.MustCompile(`(\w--\w)|(\w--)|(\w— —)|(\w- -)|(--\w)|(—— )|(— )|( —)|(———)`)
+	re = regexp.MustCompile(`(\p{L}--\p{L})|(\p{L}--)|(\p{L}— —)|(\p{L}- -)|(--\p{L})|(—— )|(— )|( —)|(———)`)
 	sscnt = 0
 	for _, para := range pbuf {
 		loc := re.FindStringIndex(para)
@@ -2005,6 +2041,8 @@ func tcParaLevel() []string {
 }
 
 // tests extracted from gutcheck that aren't already included
+// 
+
 func tcGutChecks(wb []string) []string {
 	rs := []string{}
 	rs = append(rs, "----- special situations checks -----------------------------------------------")
@@ -2019,7 +2057,7 @@ func tcGutChecks(wb []string) []string {
 	re0003d := regexp.MustCompile(`hr|hl|cb|sb|tb|wb|tl|tn|rn|lt|tj`)                   // rare to start word
 	re0004 := regexp.MustCompile(`([A-Z])\.([A-Z])`)                                    // initials without space
 	re0006 := regexp.MustCompile(`^.$`)                                                 // single character line
-	re0007 := regexp.MustCompile(`([A-Za-z]\- [A-Za-z])|([A-Za-z] \-[A-Za-z])`)         // broken hyphenation
+	re0007 := regexp.MustCompile(`(\p{L}\- \p{L})|(\p{L} \-\p{L})`)         // broken hyphenation
 
 	// comma spacing regex
 	re0008a := regexp.MustCompile(`[a-zA-Z_],[a-zA-Z_]`) // the,horse
@@ -2042,11 +2080,14 @@ func tcGutChecks(wb []string) []string {
 	re0019 := regexp.MustCompile(`\b0\b`)                                                               // standalone 0
 	re0020a := regexp.MustCompile(`\b1\b`)                                                              // standalone 1
 	re0020b := regexp.MustCompile(`\$1\b`)                                                              // standalone 1 allowed after dollar sign
+	re0020c := regexp.MustCompile(`1,`)                                                                 // standalone 1 allowed before comma
 	re0021 := regexp.MustCompile(`([A-Za-z]\d)|(\d[A-Za-z])`)                                           // mixed alpha and numerals
 	re0022 := regexp.MustCompile(`\s$`)                                                                 // trailing spaces/whitespace on line
 	re0023 := regexp.MustCompile(`&c([^\.]|$)`)                                                         // abbreviation &c without period
 	re0024 := regexp.MustCompile(`^[!;:,.?]`)                                                           // line starts with (selected) punctuation
 	re0025 := regexp.MustCompile(`^-[^-]`)                                                              // line starts with hyphen followed by non-hyphen
+
+	re0026 := regexp.MustCompile(`\.+[’”]*\p{L}`)                                                              // 
 
 	// some traditional gutcheck tests were for
 	//   "string that contains cb", "string that ends in cl", "string that contains gbt",
@@ -2060,13 +2101,6 @@ func tcGutChecks(wb []string) []string {
 	//	 "string ii not at the beginning of a word"
 	//   "a string that starts with one of c, s or w, li, then a vowel excluding 'client'"
 	// these will be caught by spellcheck and are not tested here
-
-	/*
-
-		re0007 := regexp.MustCompile(``)  //
-		re0007 := regexp.MustCompile(``)  //
-		re0007 := regexp.MustCompile(``)  //
-	*/
 
 	type reportln struct {
 		rpt        string
@@ -2088,6 +2122,10 @@ func tcGutChecks(wb []string) []string {
 	abandonedTagCount := 0 // courtesy limit if user uploads fpgen source, etc.
 
 	for n, line := range wb {
+
+		if re0026.MatchString(line) {
+			gcreports = append(gcreports, reportln{"sentence spacing", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+		}
 
 		if re0000.MatchString(line) {
 			gcreports = append(gcreports, reportln{"opening square bracket followed by other than I, G or number", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
@@ -2168,7 +2206,7 @@ func tcGutChecks(wb []string) []string {
 		if re0019.MatchString(line) {
 			gcreports = append(gcreports, reportln{"standalone 0", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
 		}
-		if re0020a.MatchString(line) && !re0020b.MatchString(line) {
+		if re0020a.MatchString(line) && !re0020b.MatchString(line) && !re0020c.MatchString(line) {
 			gcreports = append(gcreports, reportln{"standalone 1", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
 		}
 		if re0021.MatchString(line) {
@@ -2294,26 +2332,11 @@ okword = ("mr", "mrs", "mss", "mssrs", "ft", "pm", "st", "dr", "hmm", "h'm",
 Common abbreviations that cause otherwise unexplained periods.
 okabbrev = ("cent", "cents", "viz", "vol", "vols", "vid", "ed", "al", "etc",
                "op", "cit", "deg", "min", "chap", "oz", "mme", "mlle", "mssrs")
-
-Checks to do:
-    m1 = re.search(r"^,", line)  # no comma starts a line
-    m2 = re.search(r"\s,", line)  # no space before a comma
-    m3 = re.search(r"\s,\s", line)  # no floating comma
-    m4 = re.search(r",\w", line)  # always a space after a comma unless a digit
-
 */
 
-/* ********************************************************************** */
-/*                                                                        */
-/* from wfreq.go                                                          */
-/*                                                                        */
-/* ********************************************************************** */
-
-/*  input: a slice of strings that is the book
-    output:
-        1. a map of words and frequency of occurence of each word
-        2. a slice with each element 1:1 with the lines of the text
-           containing a set, per line, of words on that line
+/*  getWordList
+	input: a slice of strings that is the book
+    output: a map of words and frequency of occurence of each word
 */
 
 func getWordList(wb []string) map[string]int {
@@ -2324,13 +2347,13 @@ func getWordList(wb []string) map[string]int {
 
 	// hyphenated words "auburn-haired" become "auburn①haired"
 	// to preserve that it is one (hyphenated) word.
-	// same for single quotes within words
-	var re1 = regexp.MustCompile(`(\w)\-(\w)`)
-	var re2 = regexp.MustCompile(`(\w)’(\w)`)
-	var re3 = regexp.MustCompile(`(\w)‘(\w)`) // rare: example "M‘Donnell"
+	// same for single quotes within words and apostrophes starting words
+	var re1 = regexp.MustCompile(`(\p{L})\-(\p{L})`)
+	var re2 = regexp.MustCompile(`(\p{L})’(\p{L})`)
+	var re3 = regexp.MustCompile(`(\p{L})‘(\p{L})`)
+	var re4 = regexp.MustCompile(`(\P{L}|^)’(\p{L})`)
 	for _, element := range wb {
 		// need to preprocess each line
-		// retain [-‘’] between letters
 		// need this twice to handle alternates i.e. r-u-d-e
 		element := re1.ReplaceAllString(element, `${1}①${2}`)
 		element = re1.ReplaceAllString(element, `${1}①${2}`)
@@ -2339,8 +2362,12 @@ func getWordList(wb []string) map[string]int {
 		element = re2.ReplaceAllString(element, `${1}②${2}`)
 		element = re3.ReplaceAllString(element, `${1}③${2}`)
 		element = re3.ReplaceAllString(element, `${1}③${2}`)
+		element = re4.ReplaceAllString(element, `${1}②${2}`)
+		element = re4.ReplaceAllString(element, `${1}②${2}`)
+
 		// all words with special characters are protected
 		t := (strings.FieldsFunc(element, f))
+		
 		for _, word := range t {
 			// put the special characters back in there
 			s := strings.Replace(word, "①", "-", -1)
@@ -2357,21 +2384,31 @@ func getWordList(wb []string) map[string]int {
 	return m
 }
 
+// protect special cases:
+// high-flying, hasn't, and 'tis all stay intact
+// capitalization is retained
+
 func getWordsOnLine(s string) []string {
+	var re1 = regexp.MustCompile(`(\p{L})\-(\p{L})`)
+	var re2 = regexp.MustCompile(`(\p{L})’(\p{L})`)
+	var re3 = regexp.MustCompile(`(\p{L})‘(\p{L})`)
+	var re4 = regexp.MustCompile(`(\P{L}|^)’(\p{L})`)
+	s = re1.ReplaceAllString(s, `${1}①${2}`)
+	s = re1.ReplaceAllString(s, `${1}①${2}`)
+	s = re2.ReplaceAllString(s, `${1}②${2}`)
+	s = re2.ReplaceAllString(s, `${1}②${2}`)
+	s = re3.ReplaceAllString(s, `${1}③${2}`)
+	s = re3.ReplaceAllString(s, `${1}③${2}`)
+	s = re4.ReplaceAllString(s, `${1}②${2}`)
+	s = re4.ReplaceAllString(s, `${1}②${2}`)
+	
+	// all words with special characters are protected
 	f := func(c rune) bool {
 		return !unicode.IsLetter(c) && !unicode.IsNumber(c)
 	}
-	var re1 = regexp.MustCompile(`(\w)\-(\w)`)
-	var re2 = regexp.MustCompile(`(\w)’(\w)`)
-	var re3 = regexp.MustCompile(`(\w)‘(\w)`)
-	s = re1.ReplaceAllString(s, `${1}①${2}`)
-	s = re1.ReplaceAllString(s, `${1}①${2}`)
-	s = re2.ReplaceAllString(s, `${1}②${2}`)
-	s = re2.ReplaceAllString(s, `${1}②${2}`)
-	s = re3.ReplaceAllString(s, `${1}③${2}`)
-	s = re3.ReplaceAllString(s, `${1}③${2}`)
-	// all words with special characters are protected
 	t := (strings.FieldsFunc(s, f))
+	
+	// put back the protected characters
 	for n, _ := range t {
 		t[n] = strings.Replace(t[n], "①", "-", -1)
 		t[n] = strings.Replace(t[n], "②", "’", -1)
@@ -2972,8 +3009,7 @@ func main() {
 		_, file := filepath.Split(p.Infile)
 		pptr = append(pptr, fmt.Sprintf("processing file: %s", file))
 	}
-	// work to do with verbose flag. some things should always be
-	// "all reports" and others could be truncated.
+	// report status of verbose flag.
 	if p.Verbose {
 		pptr = append(pptr, fmt.Sprintf("verbose flag: %s", "on"))
 	} else {
@@ -3006,14 +3042,17 @@ func main() {
 	readHeBe(filepath.Join(loc_exec, "pptext.dat"))
 
 	// now the good word list.
-	// by default it is named good_words.txt and is in the project folder (current working directory)
-	// user can override by specifying a complete path to the -g option
+	// good words may include curly quotes. convert to straight quotes
+	// before merging into dictionary
 	if len(p.GWFilename) > 0 { // a good word list was specified
 		if _, err := os.Stat(p.GWFilename); !os.IsNotExist(err) { // it exists
 			_, file := filepath.Split(p.GWFilename)
 			pptr = append(pptr, fmt.Sprintf("good words file: %s", file))
 			goodWordlist = readWordList(p.GWFilename)
 			pptr = append(pptr, fmt.Sprintf("good word count: %d words", len(goodWordlist)))
+			for i, w := range goodWordlist {
+				goodWordlist[i] = strings.Replace(w, "’", "'", -1)
+			}
 			wdic = append(wdic, goodWordlist...) // add good_words into dictionary
 		} else { // it does not exist
 			pptr = append(pptr, fmt.Sprintf("no %s found", p.GWFilename))
@@ -3027,7 +3066,7 @@ func main() {
 
 	/*************************************************************************/
 	/* line word list                                                        */
-	/* slice of words on each line of text file                              */
+	/* slice of words on each line of text file (capitalization retained)    */
 	/*************************************************************************/
 
 	for _, line := range wbuf {
@@ -3036,9 +3075,11 @@ func main() {
 
 	/*************************************************************************/
 	/* word list map to frequency of occurrence                              */
+	/* capitalization retained; hyphens, apostrophes protected               */
 	/*************************************************************************/
 
 	wordListMap = getWordList(wbuf)
+	// fmt.Println(wordListMap)
 
 	/*************************************************************************/
 	/* paragraph buffer (pb)                                                 */
