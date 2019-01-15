@@ -427,6 +427,10 @@ func commonforms() {
 			c3 := strings.Replace(clead, "’", "", -1)
 			re := regexp.MustCompile(fmt.Sprintf(`(?i)’(%s)(\A|[^\p{L}])`, c3))
 			lpb[n] = re.ReplaceAllString(lpb[n], fmt.Sprintf(`◳$1$2`))
+			// second attempt:
+			// c3 := strings.Replace(clead, "’", "", 1) // replace only the lead char
+			// re := regexp.MustCompile(fmt.Sprintf(`(^|\P{L})’(%s)(\P{L}|$])`, c3))
+			// lpb[n] = re.ReplaceAllString(lpb[n], fmt.Sprintf(`◳$2$3`))
 		}
 		for _, clead := range commons_tail {
 			c3 := strings.Replace(clead, "’", "", -1)
@@ -505,6 +509,7 @@ func doScan() []string {
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
 	// scan each paragraph
 	for n, p := range lpb {
+		// fmt.Println(p)
 		stk := ""                  // new stack for each line
 		cpos := 0                  // current rune position
 		query := make([]string, 0) // query list per paragraph
@@ -542,11 +547,18 @@ func doScan() []string {
 			if r == '’' {
 				// close single quote.
 				// if there is an open single quote, pair it
-				// else ignore this one.
 				r2, _ := utf8.DecodeLastRuneInString(stk)
 				if r2 == '‘' {
 					stk = strings.TrimSuffix(stk, "‘")
 				}
+				/*
+				 // if I wanted to report (a lot) of suspects:
+				 if r2 == '‘' {
+				    stk = strings.TrimSuffix(stk, "‘")
+				 } else {
+				    query = append(query, "query: unbalanced close single quote")
+				}
+				*/
 
 			}
 			cpos += size
@@ -2325,9 +2337,11 @@ func getWordList(wb []string) map[string]int {
 	// hyphenated words "auburn-haired" become "auburn①haired"
 	// to preserve that it is one (hyphenated) word.
 	// same for single quotes within words
-	var re1 = regexp.MustCompile(`(\w)\-(\w)`)
-	var re2 = regexp.MustCompile(`(\w)’(\w)`)
-	var re3 = regexp.MustCompile(`(\w)‘(\w)`) // rare: example "M‘Donnell"
+	// same for apostrophe starting word (2019.01.14)
+	var re1 = regexp.MustCompile(`(\p{L})\-(\p{L})`)
+	var re2 = regexp.MustCompile(`(\p{L})’(\p{L})`)
+	var re3 = regexp.MustCompile(`(\p{L})‘(\p{L})`) // rare: example "M‘Donnell"
+	// var re4 = regexp.MustCompile(`(\P{L})’(\p{L})`)
 	for _, element := range wb {
 		// need to preprocess each line
 		// retain [-‘’] between letters
@@ -2339,6 +2353,8 @@ func getWordList(wb []string) map[string]int {
 		element = re2.ReplaceAllString(element, `${1}②${2}`)
 		element = re3.ReplaceAllString(element, `${1}③${2}`)
 		element = re3.ReplaceAllString(element, `${1}③${2}`)
+		// element = re4.ReplaceAllString(element, `${1}②${2}`)  // apostrophe starting word
+		// element = re4.ReplaceAllString(element, `${1}②${2}`)
 		// all words with special characters are protected
 		t := (strings.FieldsFunc(element, f))
 		for _, word := range t {
@@ -2354,6 +2370,7 @@ func getWordList(wb []string) map[string]int {
 			}
 		}
 	}
+	// fmt.Println(m)
 	return m
 }
 
