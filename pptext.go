@@ -1209,7 +1209,6 @@ func scannoCheck(wb []string) []string {
 						re = regexp.MustCompile(`☰`)
 						loc := re.FindStringIndex(line)
 						line = getParaSegment(line, loc[0])
-
 						rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
 						count++
 					}
@@ -1327,10 +1326,10 @@ func tcRepeatedWords(pb []string) []string {
 				tmppara := t1 + "☰" + t2 + "☷" + t3
 				s := getParaSegment(tmppara, center)
 				rs = append(rs, s)
+				count++
 			}
 			start += u[0] + len(spair[0])
 			u = re.FindStringIndex(para[start:])
-			count++
 		}
 	}
 	if count == 0 {
@@ -1370,7 +1369,7 @@ func tcShortLines(wb []string) []string {
 			utf8.RuneCountInString(line) > 0 &&
 			utf8.RuneCountInString(line) <= SHORTEST_PG_LINE &&
 			utf8.RuneCountInString(wb[n+1]) > 0 {
-			if count <= 10 {
+			if p.Verbose || count < 5 {
 				rs = append(rs, fmt.Sprintf("  %5d: ☰%s☷", n, line))
 				rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, wb[n+1]))
 				rs = append(rs, "")
@@ -1378,8 +1377,9 @@ func tcShortLines(wb []string) []string {
 			count++
 		}
 	}
-	if count > 5 {
-		rs = append(rs, fmt.Sprintf("  ....%5d more.", count-5))
+	if !p.Verbose && count >= 5 {
+		rs = append(rs, fmt.Sprintf("         .... %d more.", count-5))
+		rs = append(rs, "")
 	}
 	if count == 0 {
 		rs = append(rs, "  no short lines found in text.")
@@ -1460,15 +1460,16 @@ func tcAdjacentSpaces(wb []string) []string {
 	count := 0
 	for n, line := range wb {
 		if strings.Contains(strings.TrimSpace(line), "  ") {
-			if count < 10 {
+			if p.Verbose || count < 5 {
 				rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
-			}
-			if count == 10 {
-				rs = append(rs, fmt.Sprintf("    ...more"))
 			}
 			count += 1
 		}
 	}
+	if !p.Verbose && count >= 5 {
+		rs = append(rs, fmt.Sprintf("         ... %d more", count - 5))
+	}
+
 	if count == 0 {
 		rs = append(rs, "  no adjacent spaces found in text.")
 		rs[0] = "☲" + rs[0] // style dim
@@ -1514,8 +1515,7 @@ type kv struct {
 var m = map[rune]int{} // a map for letter frequency counts
 
 // report infrequently-occuring characters (runes)
-// threshold set to fewer than 10 occurences or fewer than #lines / 100
-// do not report numbers
+// threshold set to fewer than 10 occurences
 func tcLetterChecks(wb []string) []string {
 	rs := []string{}
 	rs = append(rs, "----- character checks --------------------------------------------------------")
@@ -1535,32 +1535,32 @@ func tcLetterChecks(wb []string) []string {
 		return ss[i].Key < ss[j].Key
 	})
 	// fmt.Println(ss)
-	b := []int{10, int(len(wb) / 25)}
-	sort.Ints(b)
-	kvthres := b[0]
+	// b := []int{10, int(len(wb) / 25)}
+	// sort.Ints(b)
+	// kvthres := b[0]
 	for _, kv := range ss {
 		if strings.ContainsRune(",:;—?!-_0123456789“‘’”. abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", kv.Key) {
 			continue
 		}
 		reportme := false
-		if kv.Value < kvthres && (kv.Key < '0' || kv.Key > '9') {
+		if kv.Value < 10 {
 			reportme = true
 		}
 		if reportme {
-			reportcount := 0
+			reportcount := 0  // count of reports for this particular rune
 			rs = append(rs, fmt.Sprintf("%s", strconv.QuoteRune(kv.Key)))
 			// rs = append(rs, fmt.Sprintf("%s", kv.Key))
 			count += 1
 			for n, line := range wb {
 				if strings.ContainsRune(line, kv.Key) {
-					if reportcount < 10 {
+					if p.Verbose || reportcount < 2 {
 						line = strings.Replace(line, string(kv.Key), "☰"+string(kv.Key)+"☷", -1)
 						rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
 					}
-					if reportcount == 10 {
+					reportcount++
+					if !p.Verbose && reportcount == 2 {
 						rs = append(rs, fmt.Sprintf("    ...more"))
 					}
-					reportcount++
 				}
 			}
 		}
