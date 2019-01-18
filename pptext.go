@@ -1618,8 +1618,12 @@ func tcSpacingCheck(wb []string) []string {
 	rs = append(rs, "----- spacing pattern ---------------------------------------------------------")
 	rs = append(rs, "")
 
+	re1 := regexp.MustCompile(`11+1`)
+	re2a := regexp.MustCompile(`3`)
+	re2b := regexp.MustCompile(`5`)
 	consec := 0                        // consecutive blank lines
-	for _, line := range wb {
+	lastn := 0  // line number of last paragraph start
+	for n, line := range wb {
 		if line == "" {
 			consec++
 			continue
@@ -1629,22 +1633,29 @@ func tcSpacingCheck(wb []string) []string {
 		// consecutive blank lines, start a new line of output
 		if consec >= 4 {
 			// flush any existing line
+			s = re1.ReplaceAllString(s, "1..1")
+			s = re2a.ReplaceAllString(s, "☰3☷")
+			s = re2b.ReplaceAllString(s, "☰5☷")
+			s = fmt.Sprintf("%6d %s", lastn, s)
 			rs = append(rs, s)
-			s = s + string(consec)
+			s = fmt.Sprintf("%d", consec)
+			lastn = n
 		} else {
 			// we have fewer than four but at least one to report
 			if consec > 0 {
-				s = s + string(consec) 
+				s = fmt.Sprintf("%s%d", s, consec)
 			}
 		}
 		consec = 0  // a non-blank line seen; start count over
 	}
+	s = re1.ReplaceAllString(s, "1..1")
+	s = fmt.Sprintf("%6d %s", lastn, s)
 	rs = append(rs, s) // last line in buffer
 
 	// always dim
 	rs = append(rs, "")
-	rs[0] = "☲" + rs[0]  // style dim
-	rs[len(rs)-1] += "☷" // close style
+	// rs[0] = "☲" + rs[0]  // style dim
+	// rs[len(rs)-1] += "☷" // close style
 	return rs
 }
 
