@@ -1615,64 +1615,31 @@ func tcLetterChecks(wb []string) []string {
 func tcSpacingCheck(wb []string) []string {
 	rs := []string{}
 	s := ""
-	count := 0
 	rs = append(rs, "----- spacing pattern ---------------------------------------------------------")
 	rs = append(rs, "")
 
 	consec := 0                        // consecutive blank lines
-	re := regexp.MustCompile("11+1")   // many paragraphs separated by one line show as 1..1
-	re3 := regexp.MustCompile("3")     // flag unexpected vertical size breaks of 3
-	re5 := regexp.MustCompile("5")     // or 5 spaces
-	re411 := regexp.MustCompile("411") // a sequence of four spaces shoud be 412 so flag 411
-	pbuf := ""
 	for _, line := range wb {
 		if line == "" {
 			consec++
-		} else { // a non-blank line
-			if consec >= 4 { // start of a new chapter
-				s = re411.ReplaceAllString(s, "[411]")
-				s = re.ReplaceAllString(s, "1..1")
-				s = re3.ReplaceAllString(s, "[3]")
-				s = re5.ReplaceAllString(s, "[5]")
-				if len(pbuf)+len(s) > 64 {
-					// it would overflow, so print what I have and
-					// start a new line
-					if strings.ContainsAny(pbuf, "[]") {
-						pbuf += " ❬❬"
-						count++
-					}
-					rs = append(rs, pbuf)
-					pbuf = s
-				} else {
-					// add it to print buffer
-					pbuf = fmt.Sprintf("%s %s", pbuf, s)
-				}
-				s = "4"
-			} else {
-				if consec > 0 {
-					s = fmt.Sprintf("%s%d", s, consec)
-				}
-			}
-			consec = 0
+			continue
 		}
-	}
-	s = pbuf + " " + s
-	s = re411.ReplaceAllString(s, "[411]")
-	s = re.ReplaceAllString(s, "1..1")
-	s = re3.ReplaceAllString(s, "[3]")
-	s = re5.ReplaceAllString(s, "[5]")
-	if strings.ContainsAny(s, "[]") {
-		s += " ❬❬" // show any line (chapter) with unexpected spacing
-		count++
-	}
-	rs = append(rs, s)
-	/*
-		if count > 0 {
-			rs = append(rs, "  spacing anomalies reported.")
+		// a non-blank line
+		// if we hit a non-blank line after having seen four or more 
+		// consecutive blank lines, start a new line of output
+		if consec >= 4 {
+			// flush any existing line
+			rs = append(rs, s)
+			s = s + string(consec)
 		} else {
-			rs = append(rs, "  no spacing anomalies reported.")
+			// we have fewer than four but at least one to report
+			if consec > 0 {
+				s = s + string(consec) 
+			}
 		}
-	*/
+		consec = 0  // a non-blank line seen; start count over
+	}
+	rs = append(rs, s) // last line in buffer
 
 	// always dim
 	rs = append(rs, "")
@@ -2359,20 +2326,11 @@ func getWordList(wb []string) map[string]int {
 
 	// hyphenated words "auburn-haired" become "auburn①haired"
 	// to preserve that it is one (hyphenated) word.
-<<<<<<< HEAD
-	// same for single quotes within words
-	// same for apostrophe starting word (2019.01.14)
-	var re1 = regexp.MustCompile(`(\p{L})\-(\p{L})`)
-	var re2 = regexp.MustCompile(`(\p{L})’(\p{L})`)
-	var re3 = regexp.MustCompile(`(\p{L})‘(\p{L})`) // rare: example "M‘Donnell"
-	// var re4 = regexp.MustCompile(`(\P{L})’(\p{L})`)
-=======
 	// same for single quotes within words and apostrophes starting words
 	var re1 = regexp.MustCompile(`(\p{L})\-(\p{L})`)
 	var re2 = regexp.MustCompile(`(\p{L})’(\p{L})`)
 	var re3 = regexp.MustCompile(`(\p{L})‘(\p{L})`)
 	var re4 = regexp.MustCompile(`(\P{L}|^)’(\p{L})`)
->>>>>>> develop
 	for _, element := range wb {
 		// need to preprocess each line
 		// need this twice to handle alternates i.e. r-u-d-e
@@ -2383,14 +2341,8 @@ func getWordList(wb []string) map[string]int {
 		element = re2.ReplaceAllString(element, `${1}②${2}`)
 		element = re3.ReplaceAllString(element, `${1}③${2}`)
 		element = re3.ReplaceAllString(element, `${1}③${2}`)
-<<<<<<< HEAD
-		// element = re4.ReplaceAllString(element, `${1}②${2}`)  // apostrophe starting word
-		// element = re4.ReplaceAllString(element, `${1}②${2}`)
-=======
 		element = re4.ReplaceAllString(element, `${1}②${2}`)
 		element = re4.ReplaceAllString(element, `${1}②${2}`)
-
->>>>>>> develop
 		// all words with special characters are protected
 		t := (strings.FieldsFunc(element, f))
 		
