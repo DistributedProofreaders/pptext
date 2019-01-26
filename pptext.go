@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.01.15"
+const VERSION string = "2019.01.25"
 
 var sw []string // suspect words list
 
@@ -990,95 +990,48 @@ type rp struct {
 	rpp int
 }
 
-func useStart(s string, rps []rp) string {
-	zrs := ""
-	if len(rps) <= 60 {
-		zrs = s
-	} else {
-		t := 60
-		for {
-			if t == 0 || rps[t].rpr == ' ' {
-				break
-			}
-			t--
-		}
-		if t == 0 { // never found a space
-			t = 60 // reset to 60 runes
-		}
-		zrs = strings.TrimSpace(s[0:rps[t].rpp])
-	}
-	return zrs
-}
+func getParaSegment(ss string, where int) string {
 
-func useEnd(s string, rps []rp) string {
-	zrs := ""
-	if len(rps) < 60 { // if 60 runes, keep them all
-		zrs = s
-	} else {
-		t := len(rps) - 60 // start looking 60 runes from the end
-		for {
-			if rps[t].rpr == ' ' || t == len(rps)-1 {
-				break
-			}
-			t++
-		}
-		if t == len(rps)-1 { // there were no spaces
-			t = len(rps) - 60 // reset 60 spaces back
-		}
-		zrs = strings.TrimSpace(s[rps[t].rpp:len(s)])
-	}
-	return zrs
-}
+	s := "" // string to return
 
-func getParaSegment(s string, where int) string {
-	// convert paragraph to slice of {runes, positions}
+	// convert to array of runes
 	rps := make([]rp, 0)
-	zrs := "" // return string
-	for i, w := 0, 0; i < len(s); i += w {
-		runeValue, width := utf8.DecodeRuneInString(s[i:])
-		// fmt.Printf("%#U starts at byte position %d\n", runeValue, i)
+	for i, w := 0, 0; i < len(ss); i += w {
+		runeValue, width := utf8.DecodeRuneInString(ss[i:])
 		rps = append(rps, rp{rpr: runeValue, rpp: i})
 		w = width
 	}
-	if where == -1 { // show paragraph end
-		zrs = useEnd(s, rps)
+
+	llim := where - 30
+	rlim := where + 30
+	// if llim = -5 we are 5 too far. tack to right
+	if llim < 0 {
+		rlim += -llim
+		llim = 0
 	}
-	if where == 0 { // show paragraph start
-		zrs = useStart(s, rps)
+	// if rlim > len(rps), too far. tack to left
+	if rlim > len(rps) {
+		llim -= rlim - len(rps)
+		rlim = len(rps)
 	}
-	if zrs == "" { // we are given a center point as a byte position
-		crp := 0 // center run position as index into rps
-		for i := 0; i < len(rps); i++ {
-			if rps[i].rpp <= where {
-				crp = i
-			}
-		}
-		if crp-30 < 0 {
-			zrs = useStart(s, rps)
-		}
-		if zrs == "" && crp+30 >= len(rps) {
-			zrs = useEnd(s, rps)
-		}
-		if zrs == "" {
-			sleft := crp - 30
-			for {
-				if rps[sleft].rpr == ' ' {
-					break
-				}
-				sleft++
-			}
-			sright := crp + 30
-			for {
-				if rps[sright].rpr == ' ' {
-					break
-				}
-				sright--
-			}
-			zrs = strings.TrimSpace(s[rps[sleft].rpp:rps[sright].rpp])
-		}
+	// last adjust: llim underflow
+	if llim < 0 {
+		llim = 0
 	}
-	return zrs
+
+	// find spaces...
+	for ; llim > 0 && rps[llim].rpr != ' '; llim-- {}
+	for ; rlim < len(rps) && rps[rlim].rpr != ' '; rlim++ {}
+
+	rpseg := rps[llim:rlim]
+	for _, t := range(rpseg) {
+		s += string(t.rpr)
+	}
+	s = strings.TrimSpace(s)
+
+	return s
 }
+
 
 func getPuncStyle() string {
 
@@ -2010,7 +1963,7 @@ func tcParaLevel() []string {
 			}
 			sscnt++
 			if sscnt < RLIMIT || p.Verbose {
-				rs = append(rs, "    ..."+getParaSegment(para, -1)) // show paragraph end
+				rs = append(rs, "    ..."+getParaSegment(para, len(para))) // show paragraph end
 			}
 		}
 	}
