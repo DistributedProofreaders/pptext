@@ -1095,10 +1095,11 @@ func prettyPrint(v interface{}) (err error) {
 /*                                                                        */
 /* ********************************************************************** */
 
-//
+// check for "motor-car" and "motorcar"
+
 func tcHypConsistency(wb []string) []string {
 	rs := []string{}
-	rs = append(rs, "----- hyphenation consistency check -------------------------------------------")
+	rs = append(rs, "----- hyphenation and non-hyphenated check ------------------------------------")
 	rs = append(rs, "")
 
 	count := 0
@@ -1132,9 +1133,84 @@ func tcHypConsistency(wb []string) []string {
 			}
 		}
 	}
-	
+
 	if count == 0 {
-		rs = append(rs, "  no hyphenation inconsistencies found.")
+		rs = append(rs, "  no hyphenation/non-hyphenated inconsistencies found.")
+		rs[0] = "☲" + rs[0] // style dim
+	} else {
+		rs[0] = "☳" + rs[0] // style black
+	}
+	rs = append(rs, "")
+	rs[len(rs)-1] += "☷" // close style
+	tcec += count
+	return rs
+}
+
+// check for "motor-car" and "motor car"
+
+func tcHypSpaceConsistency(wb []string, pb []string) []string {
+	rs := []string{}
+	rs = append(rs, "----- hyphenation and spaced pair check ---------------------------------------")
+	rs = append(rs, "")
+	count := 0
+
+	re := regexp.MustCompile(`\p{L}\p{L}+ \p{L}\p{L}+`) // two words sep by space
+	for s, _ := range wordListMap {
+		if strings.Contains(s, "-") {
+			// split into two words into hpair (hyphenation pair)
+			hpair := strings.Split(s, "-")
+			if len(hpair) != 2 {
+				continue  // only handle two words with one hyphen
+			}
+			// go through each paragraph and look for those two words
+			// in succession separated by a space
+			for _, para := range pb {  // go over each paragraph
+				start := 0 // at start of para
+				// find two space separated words into spair (space pair)
+				for u := re.FindStringIndex(para[start:]); u != nil; {
+					pair := (para[start+u[0]:start+u[1]])
+					spair := strings.Split(pair, " ")
+					if spair[0] == hpair[0] && spair[1] == hpair[1] {
+						// we have "motor car" and "motor-car"
+						count++
+						rs = append(rs, fmt.Sprintf("\"%s-%s\" ❬-❭ \"%s %s\"",
+							hpair[0], hpair[1], spair[0], spair[1]))
+						// show where they are
+						s1done, s2done := false, false
+						s1a := fmt.Sprintf("\\P{L}%s-%s\\P{L}", spair[0], spair[1])
+						re1a := regexp.MustCompile(s1a) // two words sep by hyphen
+						s2a := fmt.Sprintf("\\P{L}%s %s\\P{L}", spair[0], spair[1])
+						re2a := regexp.MustCompile(s2a) // two words sep by space
+						for n, line := range(wb){
+							// hyphenated
+							if !s1done && re1a.MatchString(line) {
+								rs = append(rs, fmt.Sprintf("%7d: %s", n, line))
+								s1done = true
+							}
+							// spaced (can be over two lines)
+							if !s2done && re2a.MatchString(line) {
+								rs = append(rs, fmt.Sprintf("%7d: %s", n, line))
+								s2done = true							
+							}
+							if ( (n < len(wb)-1) && !s2done	&& strings.HasSuffix(line, hpair[0]) && strings.HasPrefix(wb[n+1], hpair[1])) {
+								rs = append(rs, fmt.Sprintf("%7d: %s", n, line))
+								rs = append(rs, fmt.Sprintf("         %s", wb[n+1]))
+								s2done = true							
+							}						
+							if s1done && s2done {
+								break
+							}
+						}
+					}
+					start += u[0] + len(spair[0]) // skip over first word
+					u = re.FindStringIndex(para[start:]) // get next pair	
+				}
+			}
+		}
+	}
+
+	if count == 0 {
+		rs = append(rs, "  no hyphenated/spaced pair inconsistencies found.")
 		rs[0] = "☲" + rs[0] // style dim
 	} else {
 		rs[0] = "☳" + rs[0] // style black
@@ -2269,6 +2345,7 @@ func textCheck() []string {
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
 	rs = append(rs, "")
 	rs = append(rs, tcHypConsistency(wbuf)...)
+	rs = append(rs, tcHypSpaceConsistency(wbuf, pbuf)...)
 	rs = append(rs, tcAsteriskCheck(wbuf)...)
 	rs = append(rs, tcAdjacentSpaces(wbuf)...)
 	rs = append(rs, tcTrailingSpaces(wbuf)...)
