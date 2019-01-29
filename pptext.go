@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.01.25"
+const VERSION string = "2019.01.28"
 
 var sw []string // suspect words list
 
@@ -812,6 +812,34 @@ func spellCheck(wd []string) ([]string, []string, []string) {
 
 	/* =============================================================================== */
 
+	// new 28-Jan-2019: if a word is in all upper case, 
+	// check if OK by their titlecase form being in the dictionary
+	// will approve BRITISH since British is in dictionary
+	tcwordlist := make(map[string]int) // all words in title case
+
+	for word, count := range wlmLocal {
+		if strings.ToUpper(word) == word {  // it is upper case
+			tcword := strings.Title(strings.ToLower(word))
+			ip := sort.SearchStrings(wd, tcword)   // where it would insert
+			if ip != len(wd) && wd[ip] == tcword { // true if we found it
+				// ok by title case
+				tcwordlist[word] = count // remember upper case version as good word
+				okwordlist[word] = count // remember as good word
+				willdelete = append(willdelete, word)
+			}
+		}
+	}
+
+	rs = append(rs, fmt.Sprintf("  approved by titlecase form: %d words", len(willdelete)))
+
+	// delete words that have been OKd by their lowercase form being in the dictionary
+	for _, word := range willdelete {
+		delete(wlmLocal, word)
+	}
+	willdelete = nil // clear the list of words to delete
+
+	/* =============================================================================== */
+
 	// fmt.Printf("%+v\n", wlmLocal)
 	// fmt.Println(len(wlmLocal))
 	// fmt.Println(len(lcwordlist))
@@ -1032,7 +1060,6 @@ func getParaSegment(ss string, where int) string {
 	return s
 }
 
-
 func getPuncStyle() string {
 
 	// decide is this is American or British punctuation
@@ -1105,6 +1132,7 @@ func tcHypConsistency(wb []string) []string {
 			}
 		}
 	}
+	
 	if count == 0 {
 		rs = append(rs, "  no hyphenation inconsistencies found.")
 		rs[0] = "☲" + rs[0] // style dim
