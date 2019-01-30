@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.01.29"
+const VERSION string = "2019.01.30"
 
 var sw []string // suspect words list
 
@@ -1195,18 +1195,22 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 							// hyphenated
 							if !s1done && re1a.MatchString(" "+line+" ") {
 								line = re1a.ReplaceAllString(" "+line+" ", `☰$1☷`)
+								line = strings.Replace(line, "☰ ", " ☰", -1)
+								line = strings.Replace(line, " ☷", "☷ ", -1)
 								rs = append(rs, fmt.Sprintf("%7d: %s", n, strings.TrimSpace(line)))
 								s1done = true
 							}
 							// spaced (can be over two lines)
 							if !s2done && re2a.MatchString(" "+line+" ") {
 								line = re2a.ReplaceAllString(" "+line+" ", `☰$1☷`)
+								line = strings.Replace(line, "☰ ", " ☰", -1)
+								line = strings.Replace(line, " ☷", "☷ ", -1)
 								rs = append(rs, fmt.Sprintf("%7d: %s", n, strings.TrimSpace(line)))
 								s2done = true							
 							}
 							if ( (n < len(wb)-1) && !s2done	&& strings.HasSuffix(line, spair[0]) && strings.HasPrefix(wb[n+1], spair[1])) {
 								re3t := regexp.MustCompile("("+spair[0]+")")
-								ltop := re3t.ReplaceAllString(wb[n], `☰$1☷`)
+								ltop := re3t.ReplaceAllString(wb[n], `☰$1☷`)						
 								rs = append(rs, fmt.Sprintf("%7d: %s", n, ltop))
 								re3b := regexp.MustCompile("("+spair[1]+")")
 								lbot := re3b.ReplaceAllString(wb[n+1], `☰$1☷`)								
