@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.01.28"
+const VERSION string = "2019.01.29"
 
 var sw []string // suspect words list
 
@@ -1114,15 +1114,15 @@ func tcHypConsistency(wb []string) []string {
 					sdone, s2done := false, false
 					for n, line := range wb {
 						re1 := regexp.MustCompile(`(\P{L}` + s + `\P{L})`)
-						if !sdone && re1.MatchString(line) {
-							line = re1.ReplaceAllString(line, `☰$1☷`)
-							rs = append(rs, fmt.Sprintf("%6d: %s", n, line))
+						if !sdone && re1.MatchString(" "+line+" ") {
+							line = re1.ReplaceAllString(" "+line+" ", `☰$1☷`)
+							rs = append(rs, fmt.Sprintf("%6d: %s", n, strings.TrimSpace(line)))
 							sdone = true
 						}
 						re2 := regexp.MustCompile(`(\P{L}` + s2 + `\P{L})`)
-						if !s2done && re2.MatchString(line) {
-							line = re2.ReplaceAllString(line, `☰$1☷`)
-							rs = append(rs, fmt.Sprintf("%6d: %s", n, line))
+						if !s2done && re2.MatchString(" "+line+" ") {
+							line = re2.ReplaceAllString(" "+line+" ", `☰$1☷`)
+							rs = append(rs, fmt.Sprintf("%6d: %s", n, strings.TrimSpace(line)))
 							s2done = true
 						}
 						if sdone && s2done {
@@ -1146,7 +1146,8 @@ func tcHypConsistency(wb []string) []string {
 	return rs
 }
 
-// check for "motor-car" and "motor car"
+// “We can’t let that man get away!”
+// “Get-away from here!”
 
 func tcHypSpaceConsistency(wb []string, pb []string) []string {
 	rs := []string{}
@@ -1157,48 +1158,64 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 	re := regexp.MustCompile(`\p{L}\p{L}+ \p{L}\p{L}+`) // two words sep by space
 	for s, _ := range wordListMap {
 		if strings.Contains(s, "-") {
+			s1done, s2done := false, false
+			reported := false
 			// split into two words into hpair (hyphenation pair)
 			hpair := strings.Split(s, "-")
 			if len(hpair) != 2 {
 				continue  // only handle two words with one hyphen
 			}
+			// both words lower case for compare
+			hpairlow := []string{strings.ToLower(hpair[0]), strings.ToLower(hpair[1])}
 			// go through each paragraph and look for those two words
 			// in succession separated by a space
 			for _, para := range pb {  // go over each paragraph
+				if reported {
+					continue
+				}
 				start := 0 // at start of para
 				// find two space separated words into spair (space pair)
 				for u := re.FindStringIndex(para[start:]); u != nil; {
 					pair := (para[start+u[0]:start+u[1]])
 					spair := strings.Split(pair, " ")
-					if spair[0] == hpair[0] && spair[1] == hpair[1] {
-						// we have "motor car" and "motor-car"
+					// both of these words also lower case also
+					spairlow := []string{strings.ToLower(spair[0]), strings.ToLower(spair[1])}
+					if !reported && spairlow[0] == hpairlow[0] && spairlow[1] == hpairlow[1] {
+						// we have "get away" and "get-away" case insensitive
 						count++
 						rs = append(rs, fmt.Sprintf("\"%s-%s\" ❬-❭ \"%s %s\"",
 							hpair[0], hpair[1], spair[0], spair[1]))
-						// show where they are
-						s1done, s2done := false, false
-						s1a := fmt.Sprintf("\\P{L}%s-%s\\P{L}", spair[0], spair[1])
+						// show where they are (case insensitive)
+						s1a := fmt.Sprintf("(?i)(\\P{L}%s-%s\\P{L})", hpair[0], hpair[1])
 						re1a := regexp.MustCompile(s1a) // two words sep by hyphen
-						s2a := fmt.Sprintf("\\P{L}%s %s\\P{L}", spair[0], spair[1])
+						s2a := fmt.Sprintf("(?i)(\\P{L}%s %s\\P{L})", spair[0], spair[1])
 						re2a := regexp.MustCompile(s2a) // two words sep by space
+
 						for n, line := range(wb){
 							// hyphenated
-							if !s1done && re1a.MatchString(line) {
-								rs = append(rs, fmt.Sprintf("%7d: %s", n, line))
+							if !s1done && re1a.MatchString(" "+line+" ") {
+								line = re1a.ReplaceAllString(" "+line+" ", `☰$1☷`)
+								rs = append(rs, fmt.Sprintf("%7d: %s", n, strings.TrimSpace(line)))
 								s1done = true
 							}
 							// spaced (can be over two lines)
-							if !s2done && re2a.MatchString(line) {
-								rs = append(rs, fmt.Sprintf("%7d: %s", n, line))
+							if !s2done && re2a.MatchString(" "+line+" ") {
+								line = re2a.ReplaceAllString(" "+line+" ", `☰$1☷`)
+								rs = append(rs, fmt.Sprintf("%7d: %s", n, strings.TrimSpace(line)))
 								s2done = true							
 							}
-							if ( (n < len(wb)-1) && !s2done	&& strings.HasSuffix(line, hpair[0]) && strings.HasPrefix(wb[n+1], hpair[1])) {
-								rs = append(rs, fmt.Sprintf("%7d: %s", n, line))
-								rs = append(rs, fmt.Sprintf("         %s", wb[n+1]))
+							if ( (n < len(wb)-1) && !s2done	&& strings.HasSuffix(line, spair[0]) && strings.HasPrefix(wb[n+1], spair[1])) {
+								re3t := regexp.MustCompile("("+spair[0]+")")
+								ltop := re3t.ReplaceAllString(wb[n], `☰$1☷`)
+								rs = append(rs, fmt.Sprintf("%7d: %s", n, ltop))
+								re3b := regexp.MustCompile("("+spair[1]+")")
+								lbot := re3b.ReplaceAllString(wb[n+1], `☰$1☷`)								
+								rs = append(rs, fmt.Sprintf("         %s", lbot))
 								s2done = true							
 							}						
 							if s1done && s2done {
-								break
+								// we have reported once for this hyphenated word
+								reported = true
 							}
 						}
 					}
@@ -1681,7 +1698,7 @@ func tcSpacingCheck(wb []string) []string {
 	consec := 0                        // consecutive blank lines
 	lastn := 0  // line number of last paragraph start
 	for n, line := range wb {
-		if line == "" {
+		if len(strings.TrimSpace(line)) == 0 {  // all whitespace
 			consec++
 			continue
 		}
