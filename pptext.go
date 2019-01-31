@@ -2,7 +2,7 @@
 filename:  pptext.go
 author:    Roger Frank
 license:   GPL
-status:    development
+status:    beta
 */
 
 package main
@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.01.30"
+const VERSION string = "2019.01.31"
 
 var sw []string // suspect words list
 
@@ -579,7 +579,7 @@ func doScan() []string {
 				}
 			}
 			if !cpara {
-				query = append(query, fmt.Sprintf("query: unclosed paragraph"))
+				query = append(query, fmt.Sprintf("query: unmatched open double quote"))
 			}
 		}
 		// save any query/reports, one per paragraph
@@ -947,7 +947,9 @@ func spellCheck(wd []string) ([]string, []string, []string) {
 	for k := range wlmLocal {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	// sort.Strings(keys)
+	// case insensitive sort
+	sort.Slice(keys, func(i, j int) bool { return strings.ToLower(keys[i]) < strings.ToLower(keys[j]) })
 
 	// show each word in context
 	var sw []string // suspect words
@@ -1105,10 +1107,16 @@ func tcHypConsistency(wb []string) []string {
 	count := 0
 	for s, _ := range wordListMap {
 		if strings.Contains(s, "-") {
-			// hyphenated version present. check without
+			// hyphenated version present
 			s2 := strings.Replace(s, "-", "", -1)
+			// create non-hyphenated version and look for it
+			reported := false
 			for t, _ := range wordListMap {
+				if reported {
+					break
+				}
 				if t == s2 {
+					// found it. report it
 					count++
 					rs = append(rs, fmt.Sprintf("%s (%d) ❬-❭ %s (%d)", s2, wordListMap[s2], s, wordListMap[s]))
 					sdone, s2done := false, false
@@ -1126,6 +1134,8 @@ func tcHypConsistency(wb []string) []string {
 							s2done = true
 						}
 						if sdone && s2done {
+							rs = append(rs, "")
+							reported = true
 							break
 						}
 					}
@@ -1218,8 +1228,12 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 								s2done = true							
 							}						
 							if s1done && s2done {
+								if !reported {
+									rs = append(rs, "")
+								}
 								// we have reported once for this hyphenated word
 								reported = true
+								break
 							}
 						}
 					}
@@ -1699,6 +1713,9 @@ func tcSpacingCheck(wb []string) []string {
 	re1 := regexp.MustCompile(`11+1`)
 	re2a := regexp.MustCompile(`3`)
 	re2b := regexp.MustCompile(`5`)
+	re2c := regexp.MustCompile(`22`)
+	re2d := regexp.MustCompile(`44`)
+
 	consec := 0                        // consecutive blank lines
 	lastn := 0  // line number of last paragraph start
 	for n, line := range wb {
@@ -1714,6 +1731,8 @@ func tcSpacingCheck(wb []string) []string {
 			s = re1.ReplaceAllString(s, "1..1")
 			s = re2a.ReplaceAllString(s, "☰3☷")
 			s = re2b.ReplaceAllString(s, "☰5☷")
+			s = re2c.ReplaceAllString(s, "☰22☷")
+			s = re2d.ReplaceAllString(s, "☰44☷")
 			s = fmt.Sprintf("%6d %s", lastn, s)
 			rs = append(rs, s)
 			s = fmt.Sprintf("%d", consec)
@@ -2552,20 +2571,23 @@ func levencheck(okwords []string, suspects []string) []string {
 	nreports := 0
 	for _, suspect := range suspects {
 		for _, okword := range okwords {
-			if utf8.RuneCountInString(suspect) < 5 {
+			if utf8.RuneCountInString(suspect) < 5 {  // must be five letters or more
 				continue
 			}
-			if strings.ToLower(suspect) == strings.ToLower(okword) {
+			if strings.ToLower(suspect) == strings.ToLower(okword) {  // only differe by capitalization
 				continue
 			}
-			// differ only by apparent plural
-			if strings.ToLower(suspect) == strings.ToLower(okword+"s") {
+			if strings.ToLower(suspect) == strings.ToLower(okword+"s") {  // differ only by apparent plural
 				continue
 			}
 			if strings.ToLower(suspect+"s") == strings.ToLower(okword) {
 				continue
 			}
+
+			// calculate distance
 			dist := levenshtein([]rune(suspect), []rune(okword))
+			// dist := levenshtein([]rune(strings.ToLower(suspect)), []rune(strings.ToLower(okword)))
+
 			if dist < 2 {
 				// get counts
 				suspectwordcount := 0
@@ -2607,6 +2629,7 @@ func levencheck(okwords []string, suspects []string) []string {
 						count += 1
 					}
 				}
+				rs = append(rs, "")
 			}
 		}
 	}
