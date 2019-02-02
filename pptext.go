@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.01.31"
+const VERSION string = "2019.02.01"
 
 var sw []string // suspect words list
 
@@ -755,7 +755,7 @@ func spellCheck(wd []string) ([]string, []string, []string) {
 		}
 	}
 
-	rs = append(rs, fmt.Sprintf("  approved by plural/singluar: %d words", len(willdelete)))
+	rs = append(rs, fmt.Sprintf("  approved by plural/singular: %d words", len(willdelete)))
 
 	// delete words that have been OKd by their singular form being in the dictionary
 	for _, word := range willdelete {
@@ -1193,13 +1193,30 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 					if !reported && spairlow[0] == hpairlow[0] && spairlow[1] == hpairlow[1] {
 						// we have "get away" and "get-away" case insensitive
 						count++
-						rs = append(rs, fmt.Sprintf("\"%s-%s\" ❬-❭ \"%s %s\"",
-							hpair[0], hpair[1], spair[0], spair[1]))
-						// show where they are (case insensitive)
+
 						s1a := fmt.Sprintf("(?i)(\\P{L}%s-%s\\P{L})", hpair[0], hpair[1])
 						re1a := regexp.MustCompile(s1a) // two words sep by hyphen
 						s2a := fmt.Sprintf("(?i)(\\P{L}%s %s\\P{L})", spair[0], spair[1])
 						re2a := regexp.MustCompile(s2a) // two words sep by space
+
+						// count of each type
+						counthyp, countspc := 0, 0
+						for n, line := range(wb){
+							if re1a.MatchString(" "+line+" ") {
+								counthyp++
+							}
+							if re2a.MatchString(" "+line+" ") {
+								countspc++
+							}
+							if ( (n < len(wb)-1) && strings.HasSuffix(line, spair[0]) && strings.HasPrefix(wb[n+1], spair[1])) {
+								countspc++
+							}
+						}
+
+						rs = append(rs, fmt.Sprintf("\"%s-%s\" (%d) ❬-❭ \"%s %s\" (%d)",
+							hpair[0], hpair[1], counthyp, spair[0], spair[1], countspc))
+						// show where they are (case insensitive)
+
 
 						for n, line := range(wb){
 							// hyphenated
@@ -1396,23 +1413,35 @@ func tcEllipsisCheck(wb []string) []string {
 	rs = append(rs, "----- ellipsis check ---------------------------------------------------------")
 	rs = append(rs, "")
 
-	re1 := regexp.MustCompile(`[^.]\.\.\. `)   // give... us some pudding
-	re2 := regexp.MustCompile(`\.\.\.\.[^\s]`) // give....us some pudding
-	re3 := regexp.MustCompile(`[^.]\.\.[^.]`)  // give .. us some pudding
-	re4 := regexp.MustCompile(`\.\.\.\.\.+`)   // give.....us some pudding
-	re5 := regexp.MustCompile(`^\.`)           // ... us some pudding (start of line)
-	re6 := regexp.MustCompile(`\.\.\.$`)       // give ... (end of line)
+	// give... us some pudding, give...us some pudding
+	re1 := regexp.MustCompile(`\p{L}\.\.\.[\s\p{L}]`)   
+
+	// give....us some pudding
+	re2 := regexp.MustCompile(`\p{L}\.\.\.\.\p{L}`)
+
+	// give.. us pudding, give ..us pudding, give .. us pudding
+	re3 := regexp.MustCompile(`[\s\p{L}]\.\.[\s\p{L}]`)
+
+	// // give .....us some pudding, // give..... us some pudding, // give ..... us some pudding
+	re4 := regexp.MustCompile(`[\s\p{L}]\.\.\.\.\.+[\s\p{L}]`) 
+
+	// ... us some pudding (start of line)
+	re5 := regexp.MustCompile(`^\.`)
+
+    // give ... (end of line)
+	re6 := regexp.MustCompile(`[^\.]\.\.\.$`)
+
+	// found in the wild
+	re7 := regexp.MustCompile(`\.\s\.+`)       // but the cars. ...
 
 	count := 0
 	for n, line := range wb {
-		if re1.MatchString(line) ||
-			re2.MatchString(line) ||
-			re3.MatchString(line) ||
-			re4.MatchString(line) ||
-			re5.MatchString(line) ||
-			re6.MatchString(line) {
-			rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
-			count++
+		if re1.MatchString(line) || re2.MatchString(line) ||
+			re3.MatchString(line) || re4.MatchString(line) ||
+			re5.MatchString(line)  || re6.MatchString(line) ||
+			re7.MatchString(line) {
+				rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
+				count++
 		}
 	}
 	if count == 0 {
@@ -2138,8 +2167,12 @@ func tcGutChecks(wb []string) []string {
 	re0000 := regexp.MustCompile(`\[[^IG\d]`)                                 // allow Illustration, Greek, or number
 	re0001 := regexp.MustCompile(`(?i)\bthe[\.\,\?\'\"\;\:\!\@\#\$\^\&\(\)]`) // punctuation after "the"
 	re0002 := regexp.MustCompile(`(,\.)|(\.,)|(,,)|([^\.]\.\.[^\.])`)         // double punctuation
-	re0003a := regexp.MustCompile(`[a-z]`)                                    // for mixed case check
-	re0003b := regexp.MustCompile(`[A-Z]`)
+
+	re0003a1 := regexp.MustCompile(`..*?[a-z].*?`)                                    // for mixed case check
+	re0003b1 := regexp.MustCompile(`..*?[A-Z].*?`)
+	re0003a2 := regexp.MustCompile(`...*?[a-z].*?`)
+	re0003b2 := regexp.MustCompile(`...*?[A-Z].*?`)
+	
 	re0003c := regexp.MustCompile(`cb|gb|pb|sb|tb|wh|fr|br|qu|tw|gl|fl|sw|gr|sl|cl|iy`) // rare to end word
 	re0003d := regexp.MustCompile(`hr|hl|cb|sb|tb|wb|tl|tn|rn|lt|tj`)                   // rare to start word
 	re0004 := regexp.MustCompile(`([A-Z])\.([A-Z])`)                                    // initials without space
@@ -2162,7 +2195,7 @@ func tcGutChecks(wb []string) []string {
 	re0013 := regexp.MustCompile(`Mr,|Mrs,|Dr,`)                                                        // title abbrev.
 	re0014 := regexp.MustCompile(`\s[\?!:;]`)                                                           // spaced punctuation
 	re0016 := regexp.MustCompile(`<\/?.*?>`)                                                            // HTML tag
-	re0017 := regexp.MustCompile(`([^\.]\.\.\. )|(\.\.\.\.[^\s])|([^\.]\.\.[^\.])|(\.\.\.\.\.+)`)       // ellipsis
+	// re0017 := regexp.MustCompile(`([^\.]\.\.\. )|(\.\.\.\.[^\s])|([^\.]\.\.[^\.])|(\.\.\.\.\.+)`)       // ellipsis
 	re0018 := regexp.MustCompile(`([\.,;!?’‘]+[‘“])|([A-Za-z]+[“])|([A-LN-Za-z]+[‘])|(“ )|( ”)|(‘s\s)`) // quote direction (context)
 	re0019 := regexp.MustCompile(`\b0\b`)                                                               // standalone 0
 	re0020a := regexp.MustCompile(`\b1\b`)                                                              // standalone 1
@@ -2225,11 +2258,27 @@ func tcGutChecks(wb []string) []string {
 		}
 		// check each word separately on this line
 		for _, word := range lwl[n] {
+
 			// check for mixed case within word after the first character,
+			// or after the second character if the first char is "’"
 			// but not if the word is in the good word list or if it occurs more than once
-			if wordListMap[word] < 2 && !inGoodWordList(word) && re0003a.MatchString(word[1:]) && re0003b.MatchString(word[1:]) {
+			reportme := false
+			if wordListMap[word] <2 && !inGoodWordList(word) {
+				if strings.HasPrefix(word, "’") {
+					if re0003a2.MatchString(word) && re0003b2.MatchString(word) {
+						reportme = true
+					}
+				} else {
+					if re0003a1.MatchString(word) && re0003b1.MatchString(word) {
+						reportme = true
+					}
+				}
+			}
+			if reportme {
+				line = strings.Replace(line, word, fmt.Sprintf("☰%s☷", word), -1)
 				gcreports = append(gcreports, reportln{"mixed case within word", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
 			}
+
 			if len(word) > 2 {
 				last2 := word[len(word)-2:]
 				if re0003c.MatchString(last2) {
@@ -2284,9 +2333,9 @@ func tcGutChecks(wb []string) []string {
 			}			
 			abandonedTagCount++
 		}
-		if re0017.MatchString(line) {
-			gcreports = append(gcreports, reportln{"ellipsis check", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
-		}
+		// if re0017.MatchString(line) {
+		//  	gcreports = append(gcreports, reportln{"ellipsis check", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+		// }
 		if re0018.MatchString(line) {
 			gcreports = append(gcreports, reportln{"quote error (context)", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
 		}
