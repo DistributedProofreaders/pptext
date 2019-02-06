@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.02.03"
+const VERSION string = "2019.02.05"
 
 var sw []string // suspect words list
 
@@ -1085,7 +1085,7 @@ func spellCheck(wd []string) ([]string, []string, []string) {
 					re = regexp.MustCompile(`☰`)
 					loc := re.FindStringIndex(line)
 					line = getParaSegment(line, loc[0])
-					rs = append(rs, fmt.Sprintf("  %6d: %s", n, line))
+					rs = append(rs, fmt.Sprintf("  %6d: %s", n+1, line)) // 1-based
 					break
 				}
 			}
@@ -1244,13 +1244,13 @@ func tcHypConsistency(wb []string) []string {
 						re1 := regexp.MustCompile(`(\P{L}` + s + `\P{L})`)
 						if !sdone && re1.MatchString(" "+line+" ") {
 							line = re1.ReplaceAllString(" "+line+" ", `☰$1☷`)
-							rs = append(rs, fmt.Sprintf("%6d: %s", n, strings.TrimSpace(line)))
+							rs = append(rs, fmt.Sprintf("%6d: %s", n+1, strings.TrimSpace(line)))  // 1-based
 							sdone = true
 						}
 						re2 := regexp.MustCompile(`(\P{L}` + s2 + `\P{L})`)
 						if !s2done && re2.MatchString(" "+line+" ") {
 							line = re2.ReplaceAllString(" "+line+" ", `☰$1☷`)
-							rs = append(rs, fmt.Sprintf("%6d: %s", n, strings.TrimSpace(line)))
+							rs = append(rs, fmt.Sprintf("%6d: %s", n+1, strings.TrimSpace(line)))  // 1-based
 							s2done = true
 						}
 						if sdone && s2done {
@@ -1343,7 +1343,7 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 								line = re1a.ReplaceAllString(" "+line+" ", `☰$1☷`)
 								line = strings.Replace(line, "☰ ", " ☰", -1)
 								line = strings.Replace(line, " ☷", "☷ ", -1)
-								rs = append(rs, fmt.Sprintf("%7d: %s", n, strings.TrimSpace(line)))
+								rs = append(rs, fmt.Sprintf("%7d: %s", n+1, strings.TrimSpace(line)))  // 1=based
 								s1done = true
 							}
 							// spaced (can be over two lines)
@@ -1351,13 +1351,13 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 								line = re2a.ReplaceAllString(" "+line+" ", `☰$1☷`)
 								line = strings.Replace(line, "☰ ", " ☰", -1)
 								line = strings.Replace(line, " ☷", "☷ ", -1)
-								rs = append(rs, fmt.Sprintf("%7d: %s", n, strings.TrimSpace(line)))
+								rs = append(rs, fmt.Sprintf("%7d: %s", n+1, strings.TrimSpace(line)))  // 1=based
 								s2done = true
 							}
 							if (n < len(wb)-1) && !s2done && strings.HasSuffix(line, spair[0]) && strings.HasPrefix(wb[n+1], spair[1]) {
 								re3t := regexp.MustCompile("(" + spair[0] + ")")
 								ltop := re3t.ReplaceAllString(wb[n], `☰$1☷`)
-								rs = append(rs, fmt.Sprintf("%7d: %s", n, ltop))
+								rs = append(rs, fmt.Sprintf("%7d: %s", n+1, ltop))  // 1=based
 								re3b := regexp.MustCompile("(" + spair[1] + ")")
 								lbot := re3b.ReplaceAllString(wb[n+1], `☰$1☷`)
 								rs = append(rs, fmt.Sprintf("         %s", lbot))
@@ -1413,7 +1413,7 @@ func tcCurlyQuoteCheck(wb []string) []string {
 				ast++
 			}
 			if !p.Verbose && countfq < 5 {
-				rs = append(rs, fmt.Sprintf("%6d: %s", n, wraptext9(line)))
+				rs = append(rs, fmt.Sprintf("%6d: %s", n+1, wraptext9(line)))  // 1=based
 			}
 			countfq++
 		}
@@ -1434,7 +1434,7 @@ func tcCurlyQuoteCheck(wb []string) []string {
 				ast++
 			}
 			if !p.Verbose && countqd < 5 {
-				rs = append(rs, fmt.Sprintf("%6d: %s", n, wraptext9(line)))
+				rs = append(rs, fmt.Sprintf("%6d: %s", n+1, wraptext9(line)))  // 1=based
 			}
 			countqd++
 		}
@@ -1486,7 +1486,7 @@ func scannoCheck(wb []string) []string {
 						re = regexp.MustCompile(`☰`)
 						loc := re.FindStringIndex(line)
 						line = getParaSegment(line, loc[0])
-						rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
+						rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, line))  // 1=based
 						count++
 					}
 					ast++
@@ -1577,7 +1577,7 @@ func tcEllipsisCheck(wb []string) []string {
 			re3.MatchString(line) || re4.MatchString(line) ||
 			re5.MatchString(line) || re6.MatchString(line) ||
 			re7.MatchString(line) {
-			rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
+			rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, line))  // 1=based
 			count++
 		}
 	}
@@ -1660,7 +1660,7 @@ func tcShortLines(wb []string) []string {
 			utf8.RuneCountInString(line) <= SHORTEST_PG_LINE &&
 			utf8.RuneCountInString(wb[n+1]) > 0 {
 			if p.Verbose || count < 5 {
-				rs = append(rs, fmt.Sprintf("  %5d: ☰%s☷", n, line))
+				rs = append(rs, fmt.Sprintf("  %5d: ☰%s☷", n+1, line))  // 1=based
 				rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, wb[n+1]))
 				rs = append(rs, "")
 			}
@@ -1694,7 +1694,7 @@ func tcLongLines(wb []string) []string {
 		if utf8.RuneCountInString(line) > 72 {
 			t := line[60:]
 			where := strings.Index(t, " ") // first space after byte 60 (s/b rune-based?)
-			rs = append(rs, fmt.Sprintf("  %5d: [%d] %s...", n, utf8.RuneCountInString(line), line[:60+where]))
+			rs = append(rs, fmt.Sprintf("  %5d: [%d] %s...", n+1, utf8.RuneCountInString(line), line[:60+where]))  // 1=based
 			count++
 		}
 	}
@@ -1726,7 +1726,7 @@ func tcAsteriskCheck(wb []string) []string {
 	for n, line := range wb {
 		if strings.Contains(line, "*") {
 			if p.Verbose || count < 5 {
-				rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
+				rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, line))  // 1=based
 			}
 			count += 1
 		}
@@ -1756,7 +1756,7 @@ func tcAdjacentSpaces(wb []string) []string {
 	for n, line := range wb {
 		if strings.Contains(strings.TrimSpace(line), "  ") {
 			if p.Verbose || count < 5 {
-				rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
+				rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, line))  // 1=based
 			}
 			count += 1
 		}
@@ -1787,7 +1787,7 @@ func tcTrailingSpaces(wb []string) []string {
 	for n, line := range wb {
 		if strings.TrimSuffix(line, " ") != line {
 			if p.Verbose || count < 5 {
-				rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
+				rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, line))  // 1=based
 			}
 			count += 1
 		}
@@ -1855,7 +1855,7 @@ func tcLetterChecks(wb []string) []string {
 				if strings.ContainsRune(line, kv.Key) {
 					if p.Verbose || reportcount < 2 {
 						line = strings.Replace(line, string(kv.Key), "☰"+string(kv.Key)+"☷", -1)
-						rs = append(rs, fmt.Sprintf("  %5d: %s", n, line))
+						rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, line))  // 1=based
 					}
 					reportcount++
 				}
@@ -2038,7 +2038,7 @@ func tcBookLevel(wb []string) []string {
 		}
 		if wb[n] == wb[n+1] && len(wb[n]) > 5 {
 			rs = append(rs, "  repeated line:")
-			rs = append(rs, fmt.Sprintf("%8d,%d: %s", n, n+1, wb[n]))
+			rs = append(rs, fmt.Sprintf("%8d,%d: %s", n+1, n+2, wb[n]))  // 1=based
 			count++
 		}
 	}
@@ -2840,7 +2840,7 @@ func levencheck(okwords []string, suspects []string) []string {
 						if count == 0 {
 							re := regexp.MustCompile(`(?i)(` + suspectlc + `)`)
 							line = re.ReplaceAllString(line, `☰$1☷`)
-							rs = append(rs, fmt.Sprintf("%6d: %s", n, wraptext9(line)))
+							rs = append(rs, fmt.Sprintf("%6d: %s", n+1, wraptext9(line)))  // 1=based
 						}
 						count += 1
 					}
@@ -2854,7 +2854,7 @@ func levencheck(okwords []string, suspects []string) []string {
 						if count == 0 {
 							re := regexp.MustCompile(`(?i)(` + okwordlc + `)`)
 							line = re.ReplaceAllString(line, `☰$1☷`)
-							rs = append(rs, fmt.Sprintf("%6d: %s", n, wraptext9(line)))
+							rs = append(rs, fmt.Sprintf("%6d: %s", n+1, wraptext9(line)))  // 1=based
 						}
 						count += 1
 					}
