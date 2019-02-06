@@ -1683,8 +1683,15 @@ func tcShortLines(wb []string) []string {
 	return rs
 }
 
+type longline struct {
+	llen 		int
+	lnum 		int
+	theline		string
+}
+
 // all lengths count runes
 func tcLongLines(wb []string) []string {
+	llst := []longline{}  // slice of long line structures
 	rs := []string{}
 	rs = append(rs, "----- long lines check ------------------------------------------------------")
 	rs = append(rs, "")
@@ -1692,17 +1699,32 @@ func tcLongLines(wb []string) []string {
 	count := 0
 	for n, line := range wb {
 		if utf8.RuneCountInString(line) > 72 {
-			t := line[60:]
-			where := strings.Index(t, " ") // first space after byte 60 (s/b rune-based?)
-			rs = append(rs, fmt.Sprintf("  %5d: [%d] %s...", n+1, utf8.RuneCountInString(line), line[:60+where]))  // 1=based
+			llst = append(llst, longline{utf8.RuneCountInString(line),n+1,line}) // 1-based line #s
+			// t := line[60:]
+			// where := strings.Index(t, " ") // first space after byte 60 (s/b rune-based?)
+			// rs = append(rs, fmt.Sprintf("  %5d: [%d] %s...", n+1, utf8.RuneCountInString(line), line[:60+where]))  // 1=based
 			count++
 		}
 	}
 
-	if count > 10 {
-		rs = rs[:1] // don't show any
-		rs = append(rs, fmt.Sprintf("%5d long lines in text. not reporting them.", count))
+	// sort in order of decreasing length
+	sort.Slice(llst, func(i, j int) bool {
+  		return llst[i].llen > llst[j].llen
+	})
+
+	nreports := 0
+	for _, lstr := range llst {
+		if p.Verbose || nreports < 5 {
+			rs = append(rs, fmt.Sprintf("%5d (%d) %s", lstr.lnum, lstr.llen, lstr.theline))
+		}
+		nreports++
 	}
+
+	if !p.Verbose && nreports > 5 {
+		rs = append(rs, fmt.Sprintf("         .... %d more.", nreports-5))
+		rs = append(rs, "")
+	}
+
 	if count == 0 {
 		rs = append(rs, "  no long lines found in text.")
 	}
