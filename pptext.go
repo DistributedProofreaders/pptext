@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.02.05"
+const VERSION string = "2019.02.07"
 
 var sw []string // suspect words list
 
@@ -3379,15 +3379,30 @@ func main() {
 
 	// if the user has used the -w option, a language file has been specified
 	// otherwise accept default
-	where := filepath.Join(loc_exec, "/wordlists/"+p.Wlang+".txt")
-	// fmt.Println(where)
-	if _, err := os.Stat(where); !os.IsNotExist(err) {
-		// it exists
-		wdic = readDict(where)
-		pptr = append(pptr, fmt.Sprintf("using wordlist: %s (%d words)", p.Wlang, len(wdic)))
-	} else {
-		pptr = append(pptr, fmt.Sprintf("no dictionary present"))
+	// 07-Jan-2019 allow multiple languages
+
+	alllang := strings.Split(p.Wlang, ",")
+	alldict := []string{}
+	for _, lang := range alllang {
+		where := filepath.Join(loc_exec, "/wordlists/"+lang+".txt")
+		if _, err := os.Stat(where); !os.IsNotExist(err) {
+			wdic = readDict(where)
+			pptr = append(pptr, fmt.Sprintf("using wordlist: %s (%d words)", lang, len(wdic)))
+			alldict = append(alldict, wdic...)
+		}
 	}
+	// word lists are concatenated; remove duplicates
+
+    keys := make(map[string]bool)
+    udict := []string{} 
+    for _, entry := range alldict {
+        if _, value := keys[entry]; !value {
+            keys[entry] = true
+            udict = append(udict, entry)
+        }
+    }    
+    // put unique word list back into wdic for merge with goodwords, sort, etc.
+	wdic = udict
 
 	// require a pptext.dat file holding scannos list and jeebies he/be lists
 	scannoWordlist = readScannos(filepath.Join(loc_exec, "pptext.dat"))
