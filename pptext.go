@@ -3428,6 +3428,11 @@ func main() {
 		pptr = append(pptr, "no good words file specified")
 	}
 
+	// straight quotes to curly in wordlists
+	for i,_ := range wdic {
+		wdic[i] = strings.Replace(wdic[i], "'", "’", -1)
+	}
+
 	// need the words in a sorted list for binary search later
 	sort.Strings(wdic)
 
