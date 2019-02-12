@@ -24,7 +24,7 @@ import (
 	"os/exec"
 )
 
-const VERSION string = "2019.02.10"
+const VERSION string = "2019.02.11a"
 
 var sw []string // suspect words list
 var gw []string // good words list
@@ -1582,21 +1582,97 @@ func tcParaLevel() []string {
 	// check: full stop (period) with the following word starting with
 	// a lower case character.
 	// allow exceptions
+	//
+	// full stop spacing regex (removed from gutcheck)
+	// re0009a := regexp.MustCompile(`\.[a-zA-Z]`)    // the.horse
+	// re0009b := regexp.MustCompile(`[^(Mr)(Mrs)(Dr)]\.\s[a-z]`)   // the. horse
 
-	re = regexp.MustCompile(`(\p{L}+)\.\s*?[a-z]`)
-	exc := []string{"Mr.", "Mrs.", "Dr."}
+
+	re_ns := regexp.MustCompile(`(\p{L}+)\.(\p{Ll}+)`)  // word.word
+	re_ws := regexp.MustCompile(`(\p{L}+)\.\s+(\p{Ll}+)`)  // word. word
+
 	sscnt = 0
+	
+	// iterate over each paragraph
 	for _, para := range pbuf {
-		loc := re.FindAllStringIndex(para, -1)
+		
+		loc_ns := re_ns.FindAllStringSubmatchIndex(para, -1)
+		loc_ws := re_ws.FindAllStringSubmatchIndex(para, -1)
+
+		// loc_?s will be of this form if two instances are in the paragraph:
+		// [[4 15 4 8 10 15] [20 28 20 22 24 28]]
+		// where  4 15 is the span of the entire first match,
+		//        4  8 is the left word
+		//       10 15 is the right word
+		// second match is the second slice
+
+		/*
+		re := regexp.MustCompile(`(\p{L}+)\.\s+(\p{Ll}+)`)
+		s := "eat this. lemon now or. else toast"
+		t := re.FindAllStringSubmatchIndex(s, -1)
+		fmt.Println(t)                   [[4 15 4 8 10 15] [20 28 20 22 24 28]]
+		fmt.Println(t[0])                [4 15 4 8 10 15]
+		fmt.Println(t[0][0])			 4 
+		fmt.Println(t[0][1])	         15
+		fmt.Println(s[t[0][2]:t[0][3]])  this
+		fmt.Println(s[t[0][4]:t[0][5]])  lemon
+		*/		
+
 		doreport := true
+
 		// go across this paragraph examining each match
-		for _, lmatch := range loc {
-			// if any of the matches are not forgiven by exception, report paragraph segment
-			for _, ts := range exc {
-				if strings.Contains(para[lmatch[0]:lmatch[1]], ts) {
-					doreport = false
+
+		// matches without spaces are always an error
+		for _, lmatch := range loc_ns {
+			if doreport {
+				if sscnt == 0 {
+					rs = append(rs, "  full stop followed by lower case letter")
+					count++
+				}
+				sscnt++
+				if sscnt < RLIMIT || p.Verbose {
+					rs = append(rs, "    "+getParaSegment(para, lmatch[0]))
 				}
 			}
+		}
+		for _, lmatch := range loc_ws {
+			// if any of the matches are not forgiven by exception, report paragraph segment
+			
+			w1 := para[lmatch[2]:lmatch[3]]
+			w2 := para[lmatch[4]:lmatch[5]]
+
+			// first word Dr. or Mrs. or Mr.
+			if w1 == "Mr" || w1 == "Mrs" || w1 == "Dr" {
+					doreport = false
+			}
+
+			// second word is entirely numeric or entirely lower case Roman numerals
+			re2a := regexp.MustCompile(`[0123456789]+`)
+			re2b := regexp.MustCompile(`[ivxlc]+`)
+			s := re2a.ReplaceAllString(w2, "")
+			if s == "" {
+				doreport = false
+			}
+			s = re2b.ReplaceAllString(w2, "")
+			if s == "" {
+				doreport = false
+			}
+
+			// other exceptions
+			if w1 == "i" && w2 == "e" {
+				doreport = false	
+			}
+			if w1 == "ex" && w2 == "gr" {
+				doreport = false	
+			}
+			if w1 == "e" && w2 == "g" {
+				doreport = false	
+			}			
+
+			if w2 == "p" {
+				doreport = false		
+			}			
+
 			if doreport {
 				if sscnt == 0 {
 					rs = append(rs, "  full stop followed by lower case letter")
@@ -1821,12 +1897,9 @@ func tcGutChecks(wb []string) []string {
 	// comma spacing regex
 	re0008a := regexp.MustCompile(`[a-zA-Z_],[a-zA-Z_]`) // the,horse
 	re0008b := regexp.MustCompile(`[a-zA-Z_],\d`)        // the,1
+
 	re0008c := regexp.MustCompile(`\s,`)                 // space comma
 	re0008d := regexp.MustCompile(`^,`)                  // comma start of line
-
-	// full stop spacing regex
-	re0009a := regexp.MustCompile(`\.[a-zA-Z]`)
-	re0009b := regexp.MustCompile(`[^(Mr)(Mrs)(Dr)]\.\s[a-z]`)
 
 	re0010 := regexp.MustCompile(`,1\d\d\d`)         // Oct. 8,1948 date format
 	re0011 := regexp.MustCompile(`I”`)               // “You should runI”
@@ -1943,10 +2016,6 @@ func tcGutChecks(wb []string) []string {
 			re0008c.MatchString(line) ||
 			re0008d.MatchString(line) {
 			gcreports = append(gcreports, reportln{"comma spacing", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
-		}
-		if re0009a.MatchString(line) ||
-			re0009b.MatchString(line) {
-			gcreports = append(gcreports, reportln{"full-stop spacing", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
 		}
 		if re0010.MatchString(line) {
 			gcreports = append(gcreports, reportln{"date format", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
@@ -2801,7 +2870,7 @@ func main() {
 	p = doparams() // parse command line parameters
 
 	/*************************************************************************/
-	/* working buffer (saved in models)                                      */
+	/* working buffer                                                        */
 	/* user-supplied source file UTF-8 encoded                               */
 	/*************************************************************************/
 
