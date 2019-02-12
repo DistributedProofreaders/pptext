@@ -24,7 +24,7 @@ import (
 	"os/exec"
 )
 
-const VERSION string = "2019.02.11a"
+const VERSION string = "2019.02.12"
 
 var sw []string // suspect words list
 var gw []string // good words list
@@ -100,7 +100,7 @@ type params struct {
 	Wlang        string
 	Alang 		 string
 	GWFilename   string
-	Experimental bool
+	Debug		 bool
 	Nolev        bool
 	Nosqc        bool
 	NoBOM        bool
@@ -432,6 +432,21 @@ func puncScan() []string {
 	return rs
 }
 
+func Intersection(a, b []string) (c []string) {
+      m := make(map[string]bool)
+
+      for _, item := range a {
+              m[item] = true
+      }
+
+      for _, item := range b {
+              if _, ok := m[item]; ok {
+                      c = append(c, item)
+              }
+      }
+      return
+}
+
 /* ********************************************************************** */
 /*                                                                        */
 /* spellcheck based on aspell                                             */
@@ -462,12 +477,14 @@ func aspellCheck() ([]string, []string, []string) {
 	fnpida := fmt.Sprintf("/tmp/%da.txt", pid)
 	fnpidb := fmt.Sprintf("/tmp/%db.txt", pid)
 
+	// make working copy
 	mycommand := fmt.Sprintf("cp %s %s", p.Infile, fnpida)
 	out, err := exec.Command("bash", "-c", mycommand).Output()
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// process with each language specified by user
 	uselangs := strings.Split(p.Alang, ",")
 	for _, rl := range uselangs {
 
@@ -493,6 +510,7 @@ func aspellCheck() ([]string, []string, []string) {
 		}	
 	}
 
+	// get resulting suspect word list
 	mycommand = fmt.Sprintf("cat %s", fnpida)	
 	out, err = exec.Command("bash", "-c", mycommand).Output()
 		if err != nil {
@@ -560,12 +578,36 @@ func aspellCheck() ([]string, []string, []string) {
 					line = re.ReplaceAllString(line, `$1☰$2☷$3`)
 					loc := re4.FindStringIndex(line) // the start of highlighted word
 					line = getParaSegment(line, loc[0])
-					rs = append(rs, fmt.Sprintf("  %6d: %s", where, line)) // 1-based				
+					rs = append(rs, fmt.Sprintf("  %6d: %s", where, line)) // 1-based
 				}
 				if reported > 1 && len(theLines) > 2 {
 					rs = append(rs, fmt.Sprintf("  ...%6d more", len(theLines)-2)) 
 					break
 				}
+			}
+		} else {
+			// in line map word is burst by hyphens
+			// sésame-ouvre-toi not found in map
+			// [2806 1507,1658,2533,2806 1333,1371,2806,3196,3697]
+			// find a number that's in all three (2806)
+			// if it has a hyphen...
+			// fmt.Printf("%s not found in map\n", word)
+			pcs := strings.Split(word,"-")
+			// find all lines with first word
+			
+			t55 := []string{}
+			for n, t34 := range pcs {
+				if n == 0 {
+					t55 = strings.Split(wordListMapLines[pcs[0]], ",")		
+				} else {
+					t55 = Intersection(t55, strings.Split(wordListMapLines[t34],","))
+				}
+			}
+			// if many matches, it probably should not be reported at all.
+			if lnum, err := strconv.Atoi(t55[0]); err == nil {
+				rs = append(rs, fmt.Sprintf("  %6s: %s", t55[0], wbuf[lnum-1])) // 1-based
+			} else {
+				rs = rs[:len(rs)-2]  // back this one off rs
 			}
 		}
 		
@@ -2200,21 +2242,23 @@ func getWordList(wb []string) (map[string]int, map[string]string) {
 	m := make(map[string]int) // map to hold words, counts
 	ml := make(map[string]string) // map to hold words, lines
 
-	// preserve single quotes within words and apostrophes starting words
+	// preserve internal hyphenation
+	///var re1 = regexp.MustCompile(`(\p{L})-(\p{L})`) // letter-letter
+	// preserve single quotes within words
 	var re2 = regexp.MustCompile(`(\p{L})’(\p{L})`) // letter’letter
-	var re4 = regexp.MustCompile(`(\P{L}|^)’(\p{L})`) // start of line or word boundary
 	for n, element := range wb {
 		// need this twice to handle alternates i.e. fo’c’s’le
+		///element = re1.ReplaceAllString(element, `${1}①${2}`)
+		///element = re1.ReplaceAllString(element, `${1}①${2}`)
 		element = re2.ReplaceAllString(element, `${1}②${2}`)
 		element = re2.ReplaceAllString(element, `${1}②${2}`)
-		element = re4.ReplaceAllString(element, `${1}②${2}`)
-		element = re4.ReplaceAllString(element, `${1}②${2}`)
 		// all words with special characters are protected
 		t := (strings.FieldsFunc(element, f))
 
 		for _, word := range t {
 			// put the special characters back in there
 			s := strings.Replace(word, "②", "’", -1)
+			s = strings.Replace(s, "①", "-", -1)
 			// and build the frequency map
 			if _, ok := m[s]; ok { // if it is there already, increment
 				m[s] = m[s] + 1
@@ -2408,13 +2452,13 @@ func levencheck(okwords []string, suspects []string) []string {
 
 			if dist < 2 {
 
-				countsuspect := wordListMapCount[suspect]  ///
-				countokword := wordListMapCount[okword]  ///
+				countsuspect := wordListMapCount[suspect]
+				countokword := wordListMapCount[okword]
 
 				if countokword == 0 || countsuspect == 0 { break }
 
 				rs = append(rs, fmt.Sprintf("%s(%d):%s(%d)", suspectlc, countsuspect,
-					okwordlc, countokword)) ///
+					okwordlc, countokword))
 				nreports++
 
 				rs = append(rs,  showWordInContext(okword)...)
@@ -2847,7 +2891,7 @@ func doparams() params {
 	flag.StringVar(&p.Outfileh, "h", "report.html", "output report file (HTML)")
 	flag.StringVar(&p.Alang, "a", "en", "aspell wordlist language")
 	flag.StringVar(&p.GWFilename, "g", "", "good words file")
-	flag.BoolVar(&p.Experimental, "x", false, "experimental (developers only)")
+	flag.BoolVar(&p.Debug, "x", false, "debug (developer use)")
 	flag.BoolVar(&p.Nolev, "d", false, "do not run Levenshtein distance tests")
 	flag.BoolVar(&p.Nosqc, "q", false, "do not run smart quote checks")
 	flag.BoolVar(&p.NoBOM, "noBOM", false, "no BOM on text report")
