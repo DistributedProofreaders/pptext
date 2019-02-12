@@ -2,7 +2,6 @@
 filename:  pptext.go
 author:    Roger Frank
 license:   GPL
-status:    beta
 */
 
 package main
@@ -22,14 +21,15 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+	"os/exec"
 )
 
-const VERSION string = "2019.02.07"
+const VERSION string = "2019.02.10"
 
 var sw []string // suspect words list
+var gw []string // good words list
 
 var rs []string // array of strings for local aggregation
-
 var pptr []string // pptext report
 
 var puncStyle string // punctuation style American or British
@@ -65,6 +65,28 @@ func wraptext9(s string) string {
 	return s2
 }
 
+// text-wrap string into string with embedded newlines
+// left indent 2 spaces
+func wraptext2(s string) string {
+	re := regexp.MustCompile(`\s+`)
+	s = re.ReplaceAllString(s, " ")
+	s2 := "  "  // start with indent
+	runecount := 0
+	for utf8.RuneCountInString(s) > 0 {
+		r, size := utf8.DecodeRuneInString(s) // first rune
+		runecount++  // how many we have collected
+		// first space after rune #68 becomes newline
+		if runecount >= 68 && r == ' ' {
+			s2 += "\n  "
+			runecount = 0
+		} else {
+			s2 += string(r) // append single rune to string
+		}
+		s = s[size:] // chop off rune
+	}
+	return s2
+}
+
 /* ********************************************************************** */
 /*                                                                        */
 /* from params.go                                                         */
@@ -76,6 +98,7 @@ type params struct {
 	Outfile      string
 	Outfileh     string
 	Wlang        string
+	Alang 		 string
 	GWFilename   string
 	Experimental bool
 	Nolev        bool
@@ -91,18 +114,19 @@ var p params
 // lwl[31] contains a slice of strings containing the words on line "31"
 var lwl []([]string)
 
-// wordListMap has all words in the book and their frequency of occurence
-// wordListMap["chocolate"] -> 3 means that word occurred three times
-var wordListMap map[string]int
+// wordListMapCount has all words in the book and their frequency of occurence
+// wordListMapCount["chocolate"] -> 3 means that word occurred three times
+var wordListMapCount map[string]int
+
+// wordListMapLines has all words in the book and their frequency of occurence
+// wordListMapLines["chocolate"] -> 415,1892,2295 means that word occurred on those three lines
+var wordListMapLines map[string]string
 
 // paragraph buffer
 var pbuf []string
 
 // working buffer
 var wbuf []string
-
-// working dictionary
-var wdic []string // working dictionary inc. good words
 
 // heMap and beMap maps map word sequences to relative frequency of occurence
 // higher values mean more frequently seen
@@ -114,7 +138,7 @@ var goodWordlist []string   // good word list specified by user
 
 /* ********************************************************************** */
 /*                                                                        */
-/* from fileio.go                                                         */
+/* file operations                                                        */
 /*                                                                        */
 /* ********************************************************************** */
 
@@ -256,14 +280,13 @@ func saveHtml(a []string, outfile string, noBOM bool, useLF bool) {
 
 /* ********************************************************************** */
 /*                                                                        */
-/* from scan.go                                                           */
+/* punctuation scan                                                       */
 /*                                                                        */
 /* ********************************************************************** */
 
-var lpb []string // local paragraph buffer
-var pnm []string // proper names in this text
+// return true if both straight and curly quotes detected
 
-func straightCurly() bool {
+func straightCurly(lpb []string) bool {
 	curly := false
 	straight := false
 	for _, line := range lpb {
@@ -280,790 +303,236 @@ func straightCurly() bool {
 	return straight && curly
 }
 
-// logic here is to strip off the last two characters if they are s’
-// if what's left is a dictionary word (l/c), then conclude it is plural possessive
-// for safety, do not do this if there is an open single quote on this line.
-// https://github.com/google/re2/wiki/Syntax
-// "horses’" becomes "horses◳" and the apostrophe drops out of the scan
+// evaluate the punctuation in one paragraph
+// if cquote is true, then next paragraph starts with an opening quote
+// 
 
-func pluralPossessive() {
-	for n, line := range lpb {
-		if strings.Contains(line, "‘") {
-			continue // possible close quote. don't check plural-poss.
-		}
-		re := regexp.MustCompile(`\p{L}+(s’)`)
-		words := re.FindAllString(line, -1)
-		for _, w := range words {
-			testword := strings.TrimSuffix(w, "s’")
-			testwordlc := strings.ToLower(testword)
-			ip := sort.SearchStrings(wdic, testwordlc)     // where it would insert
-			if ip != len(wdic) && wdic[ip] == testwordlc { // true if we found it
-				lpb[n] = strings.Replace(lpb[n], w, testword+"s◳", -1)
-			}
-		}
+func puncEval(p string, cquote bool) []string {
+	s := []string{} 
+
+	re1 := regexp.MustCompile(`“[^”]*“`) // consecutive open double quotes
+	re2 := regexp.MustCompile(`”[^“]*”`) // consecutive close double quotes
+	re3 := regexp.MustCompile(`“[^”]*$`) // unmatched open double quote
+	re4 := regexp.MustCompile(`^[^“]*”`) // unmatched close double quote
+
+	re5 := regexp.MustCompile(`‘[^’]*$`) // unmatched open single quote
+	re6 := regexp.MustCompile(`‘[^’]*‘`) // consecutive open single quote
+
+	// check consecutive open double quotes
+	loc := re1.FindStringIndex(p)
+	if loc != nil {
+		s = append(s, "consecutive open double quotes")
+		p = p[:loc[0]] + "☰" + p[ loc[0]:loc[1] ] + "☷" + p[loc[1]:]
+		s = append(s, wraptext2(p))
+		return s
 	}
-}
-
-// "goin’" -> strip last => "goin" not a word; add 'g' => "going"
-// therefore consider this as a contraction
-func ingResolve() {
-	for n, line := range lpb {
-		re := regexp.MustCompile(`\p{L}+(in’)`)
-		words := re.FindAllString(line, -1)
-		for _, w := range words {
-			strippedword := strings.TrimSuffix(w, "’")
-			strippedword_lc := strings.ToLower(strippedword)
-			augmentedword_lc := strippedword_lc + "g"
-			strippedisword := false
-			augmentedisword := false
-			ip := sort.SearchStrings(wdic, strippedword_lc)
-			if ip != len(wdic) && wdic[ip] == strippedword_lc {
-				strippedisword = true
-			}
-			ip = sort.SearchStrings(wdic, augmentedword_lc)
-			if ip != len(wdic) && wdic[ip] == augmentedword_lc {
-				augmentedisword = true
-			}
-			if augmentedisword && !strippedisword {
-				// the word is a contraction
-				lpb[n] = strings.Replace(lpb[n], w, strippedword+"◳", -1)
-			}
-		}
+	// check consecutive close double quotes
+	loc = re2.FindStringIndex(p)
+	if loc != nil {
+		s = append(s, "consecutive close double quotes")
+		p = p[:loc[0]] + "☰" + p[ loc[0]:loc[1] ] + "☷" + p[loc[1]:]
+		s = append(s, wraptext2(p))
+		return s
 	}
-}
-
-func inDict(word string) bool {
-	ip := sort.SearchStrings(wdic, word)
-	return ip != len(wdic) && wdic[ip] == word
-}
-
-// proper names
-// find proper names in this text. protect possessive
-// any capitalized word in good word list is considered a proper name
-//
-func properNames() {
-	re := regexp.MustCompile(`^\p{Lu}\p{Ll}`) // uppercase followed by lower case
-	for _, word := range goodWordlist {
-		if re.MatchString(word) {
-			pnm = append(pnm, word)
-		}
+	// check unmatched open double quote
+	// a continued quote on the next paragraph dismisses this report
+	loc = re3.FindStringIndex(p)
+	if loc != nil && !cquote{
+		s = append(s, "unmatched open double quote")
+		p = p[:loc[0]] + "☰" + p[ loc[0]:loc[1] ] + "☷" + p[loc[1]:]
+		s = append(s, wraptext2(p))
+		return s
+	}	
+	// check unmatched close double quote
+	loc = re4.FindStringIndex(p)
+	if loc != nil {
+		s = append(s, "unmatched close double quote")
+		p = p[:loc[0]] + "☰" + p[ loc[0]:loc[1] ] + "☷" + p[loc[1]:]
+		s = append(s, wraptext2(p))
+		return s
 	}
-	for word, freq := range wordListMap {
-		if re.MatchString(word) {
-			// if this title-case word occurs frequently
-			// and isn't a contraction and is not in the dictionary,
-			// then consider it a proper name
-			if strings.Contains(word, "’") {
-				continue
-			}
-			if freq > 4 && !inDict(strings.ToLower(word)) {
-				pnm = append(pnm, word)
-			}
-		}
-	}
-	// have proper names in pnm. protect them in text
-	pnmr := make([]string, len(pnm))
-	for n, word := range pnm {
-		if strings.HasSuffix(word, "s") {
-			pnm[n] = word + "’"
-			pnmr[n] = word + "◳"
-		} else {
-			pnm[n] = word + "’s"
-			pnmr[n] = word + "◳s"
-		}
-	}
-	for n, _ := range lpb {
-		for j, _ := range pnm {
-			lpb[n] = strings.Replace(lpb[n], pnm[j], pnmr[j], -1)
-		}
-	}
-}
+	// check consecutive open single quote
+	loc = re6.FindStringIndex(p)
+	if loc != nil {
+		s = append(s, "consecutive open single quote")
+		p = p[:loc[0]] + "☰" + p[ loc[0]:loc[1] ] + "☷" + p[loc[1]:]
+		s = append(s, wraptext2(p))
+		return s
+	}	
+	// check unmatched open single quote
+	loc = re5.FindStringIndex(p)
+	if loc != nil {
+		s = append(s, "unmatched open single quote")
+		p = p[:loc[0]] + "☰" + p[ loc[0]:loc[1] ] + "☷" + p[loc[1]:]
+		s = append(s, wraptext2(p))
+		return s
+	}	
 
-// single words in single quotes are protected
-// two words in single quotes are protected (TODO: if they are both valid words)
-func wordQuotes() {
-	for n, _ := range lpb {
-		re := regexp.MustCompile(`‘(\S+)’`)
-		lpb[n] = re.ReplaceAllString(lpb[n], `◰$1◳`)
-		re = regexp.MustCompile(`‘(\S+) (\S+)’`)
-		// verify $1 and $2 are valid words here
-		lpb[n] = re.ReplaceAllString(lpb[n], `◰$1 $2◳`)
-	}
-}
+	// single quote scan in context with adjustments for plural possessive, etc.
+	// are for a future release
 
-func internals() {
-	for n, _ := range lpb {
-		re := regexp.MustCompile(`(\p{L})’(\p{L})`)
-		lpb[n] = re.ReplaceAllString(lpb[n], `$1◳$2`)
-	}
-}
-
-func commonforms() {
-	// common forms that probably are apostrophes and not single quotes
-	// are converted. Ideally, all remaining '‘' and '’' are quotes to be
-	// scanned later.
-	// limit common forms to those that do not become a word when the
-	// apostrophe is removed.
-
-	commons_lead := []string{
-		"’em", "’a’", "’n’", "’twill", "’twon’t", "’twas", "’tain’t", "’taint", "’twouldn’t",
-		"’twasn’t", "’twere", "’twould", "’tis", "’twarn’t", "’tisn’t", "’twixt", "’till",
-		"’bout", "’casion", "’shamed", "’lowance", "’n", "’s", "’d", "’m", "’ave",
-		"’cordingly", "’baccy", "’cept", "’stead", "’spose", "’chute", "’im",
-		"’u’d", "’tend", "’rickshaw", "’appen", "’oo", "’urt", "’ud", "’ope", "’ow",
-		"’specially",
-		// higher risk follows
-		"’most", "’cause", "’way"}
-
-	commons_tail := []string{
-		"especial’", "o’", "ol’", "tha’", "canna’", "an’", "d’",
-		"G’-by", "ha’", "tak’", "th’", "i’", "wi’", "yo’", "ver’", "don’", "jes’",
-		"aroun’", "wan’", "M◳sieu’", "nuthin’"}
-
-	commons_both := []string{"’cordin’"}
-
-	for n, _ := range lpb {
-		for _, clead := range commons_lead {
-			c3 := strings.Replace(clead, "’", "", -1)
-			re := regexp.MustCompile(fmt.Sprintf(`(?i)’(%s)(\A|[^\p{L}])`, c3))
-			lpb[n] = re.ReplaceAllString(lpb[n], fmt.Sprintf(`◳$1$2`))
-			// second attempt:
-			// c3 := strings.Replace(clead, "’", "", 1) // replace only the lead char
-			// re := regexp.MustCompile(fmt.Sprintf(`(^|\P{L})’(%s)(\P{L}|$])`, c3))
-			// lpb[n] = re.ReplaceAllString(lpb[n], fmt.Sprintf(`◳$2$3`))
-		}
-		for _, clead := range commons_tail {
-			c3 := strings.Replace(clead, "’", "", -1)
-			re := regexp.MustCompile(fmt.Sprintf(`(\A|[\P{L}])(%s)’`, c3))
-			lpb[n] = re.ReplaceAllString(lpb[n], `$1$2◳`)
-		}
-		for _, clead := range commons_both {
-			c3 := strings.Replace(clead, "’", "", -1)
-			re := regexp.MustCompile(fmt.Sprintf(`’(%s)’`, c3))
-			lpb[n] = re.ReplaceAllString(lpb[n], `◳$1◳`)
-		}
-	}
-}
-
-func fr(line string, cpos int) (int, rune) { // go forward one rune
-	r, size := utf8.DecodeRuneInString(line[cpos:])
-	cpos += size
-	return cpos, r
-}
-
-func br(line string, cpos int) (int, rune) { // go backwards one rune
-	r, size := utf8.DecodeLastRuneInString(line[:cpos])
-	cpos -= size
-	return cpos, r
-}
-
-func cr(line string, cpos int) rune { // current rune
-	r, _ := utf8.DecodeRuneInString(line[cpos:])
-	return r
-}
-
-/*
-// test code for moving through buffer
-func parawalk() {
-	var cpos int // current position on line (byte offset)
-	var r rune   // rune at this position
-	for _, line := range pbuf {
-		cpos = 0
-		for cpos < len(line) {
-			cpos, r = Fr(line, cpos)
-			fmt.Println(cpos, string(r))
-		}
-		fmt.Println("------------------")
-
-		for cpos > 0 {
-			cpos, r = Br(line, cpos)
-			fmt.Println(cpos, string(r))
-		}
-
-		fmt.Printf("%s", string(Cr(line, cpos)))
-
-		fmt.Println("BEFORE", utf8.RuneCountInString(line))
-
-		line = strings.Replace(line, "“", "A", -1)
-		line = strings.Replace(line, "”", "B", -1)
-
-		cpos = 0
-		for cpos < len(line) {
-			cpos, r = Fr(line, cpos)
-			fmt.Println(cpos, string(r))
-		}
-		fmt.Println("AFTER", utf8.RuneCountInString(line))
-
-	}
-}
-*/
-
-// limited to “, ”, ‘, ’
-// doesn't handle «, ‟, ‹, ⸌, ⸜, ⸠ as in etext 58423
-
-func doScan() []string {
-	nreports := 0
-	rs := []string{}
-	rs = append(rs, fmt.Sprintf("********************************************************************************"))
-	rs = append(rs, fmt.Sprintf("* %-76s *", "PUNCTUATION SCAN REPORT"))
-	rs = append(rs, fmt.Sprintf("********************************************************************************"))
-	// scan each paragraph
-	for n, p := range lpb {
-		// fmt.Println(p)
-		stk := ""                  // new stack for each line
-		cpos := 0                  // current rune position
-		query := make([]string, 0) // query list per paragraph
-		for cpos < len(p) {        // go across the line for double, single quotes
-			r, size := utf8.DecodeRuneInString(p[cpos:])
-
-			if r == '“' {
-				// open double quote. check for consecutive open DQ
-				r2, _ := utf8.DecodeLastRuneInString(stk)
-				if r2 == '“' {
-					query = append(query, "query: consec open double quote")
-				}
-				stk += string('“')
-			}
-			if r == '”' {
-				// close double quote. check for consecutive close DQ or unmatched
-				r2, _ := utf8.DecodeLastRuneInString(stk)
-				if r2 == '”' {
-					query = append(query, "query: consec close double quote:")
-				}
-				if r2 != '“' {
-					query = append(query, "query: unmatched close double quote:")
-				}
-				stk = strings.TrimSuffix(stk, "“")
-			}
-
-			if r == '‘' {
-				// open single quote. check for consecutive open SQ
-				r2, _ := utf8.DecodeLastRuneInString(stk)
-				if r2 == '‘' {
-					query = append(query, "query: consec open single quote")
-				}
-				stk += string('‘')
-			}
-			if r == '’' {
-				// close single quote.
-				// if there is an open single quote, pair it
-				r2, _ := utf8.DecodeLastRuneInString(stk)
-				if r2 == '‘' {
-					stk = strings.TrimSuffix(stk, "‘")
-				}
-				/*
-					 // if I wanted to report (a lot) of suspects:
-					 if r2 == '‘' {
-					    stk = strings.TrimSuffix(stk, "‘")
-					 } else {
-					    query = append(query, "query: unbalanced close single quote")
-					}
-				*/
-
-			}
-			cpos += size
-		}
-
-		// if the stack has a single “ remaining,
-		// that is considered okay if the next paragraph starts with another “
-		// more rarely (as in etext 58432), the combo '“‘' remains, which
-		// will trigger a false positive
-		if len(stk) > 0 {
-			cpara := false
-			if stk == "“" {
-				// check for continued paragraph. look ahead if possible
-				if n < len(lpb)-2 {
-					// allows for indented block of text
-					r3, _ := utf8.DecodeRuneInString(strings.TrimSpace(lpb[n+1]))
-					cpara = (r3 == '“')
-				}
-			}
-			if !cpara {
-				query = append(query, fmt.Sprintf("query: unmatched open double quote"))
-			}
-		}
-		// save any query/reports, one per paragraph
-		if len(query) > 0 {
-			p = strings.Replace(p, "◳", "’", -1)
-			p = strings.Replace(p, "◰", "‘", -1)
-
-			// text wrap of paragraph p into s2, with inserted newlines
-			s2 := ""
-			runecount := 0
-			// rc := utf8.RuneCountInString(s)
-			for len(p) > 0 {
-				r, size := utf8.DecodeRuneInString(p)
-				runecount++
-				if runecount >= 70 && r == ' ' {
-					r = '\n'
-					runecount = 0
-				}
-				s2 += string(r)
-				p = p[size:]
-			}
-
-			// save this query
-			rs = append(rs, fmt.Sprintf("☳%s☷\n  ☱%s☷\n", query[0], s2))
-			nreports++
-		}
-	}
-	if nreports == 0 {
-		rs = append(rs, "  no punctuation scan queries reported")
-		rs[0] = "☲" + rs[0] // style dim
-	} else {
-		rs[0] = "☳" + rs[0] // style black
-	}
-	rs = append(rs, "")
-	rs[len(rs)-1] += "☷" // close style
-	return rs
+	return s
 }
 
 func puncScan() []string {
+	
 	rs := []string{} // local rs to start aggregation
+	rs = append(rs, "☳********************************************************************************")
+	rs = append(rs, "* PUNCTUATION SCAN                                                             *")
+	rs = append(rs, "********************************************************************************")
+	rs = append(rs, "")
 
 	// get a copy of the paragraph buffer to edit in place
-	lpb = make([]string, len(pbuf))
+	lpb := make([]string, len(pbuf))
 	copy(lpb, pbuf)
-	if straightCurly() { // check for mixed style
-		// short-circuit report
-		rs = append(rs, "☳********************************************************************************")
-		rs = append(rs, "* PUNCTUATION SCAN REPORT                                                      *")
-		rs = append(rs, "********************************************************************************")
+
+	if straightCurly(lpb) {
+		// cannot proceed if mixed straight and curly quotes
 		rs = append(rs, "  ☰mixed straight and curly quotes.☷ curly quote scan not done☷")
 		rs = append(rs, "")
 		return rs
 	}
-	pluralPossessive() // horses’ becomes horses◳
-	internals()        // protect internal '’' characters as in contractions
-	commonforms()      // protect known common forms
-	ingResolve()       // resolve -ing words that are contracted
-	wordQuotes()       // apparent quoted words or two-word phrases
-	properNames()      // protect proper names
-	t := doScan()      // scan quotes and report, returns []string
-	rs = append(rs, t...)
+
+	// iterate over paragraphs
+	i := 0
+	var cquote bool=false
+	haveReport := false
+	reportedDPC := false
+	for ; i < len(lpb); i++ {
+
+		// does the following paragraph start with an opening quote?
+		if i == len(lpb)-1 {
+			cquote = false
+		} else {
+			// may be in a block quote
+			cquote = strings.HasPrefix(strings.TrimSpace(lpb[i+1]), "“")
+		}
+		
+		// DP Canada allows ‟ to substitute as an open double quote
+		if strings.ContainsAny(lpb[i], "‟") {
+			if !reportedDPC {
+				rs = append(rs, "info: \"‟\" substituting for open double quote \"“\"")
+				reportedDPC = true
+			}
+			lpb[i] = strings.Replace(lpb[i], "‟", "“", 1)
+		}
+
+		result := puncEval(lpb[i], cquote)
+		if len(result) > 0 {
+			rs = append(rs, result...)
+			haveReport = true
+		}
+	}
+
+	if !haveReport {
+		rs = append(rs, "no punctuation scan reports")	
+	}
+	rs = append(rs, "☷")
+
 	return rs
 }
 
 /* ********************************************************************** */
 /*                                                                        */
-/* from spellcheck.go                                                     */
+/* spellcheck based on aspell                                             */
 /*                                                                        */
 /* ********************************************************************** */
 
-// lookup word. also check using lower case
-func lookup(wd []string, word string) bool {
-	foundit := false
-	ip := sort.SearchStrings(wd, word) // where it would insert
-	if ip != len(wd) && wd[ip] == word {
-		foundit = true
-	}
-	ip = sort.SearchStrings(wd, strings.ToLower(word)) // where l/c would insert
-	if ip != len(wd) && wd[ip] == strings.ToLower(word) {
-		foundit = true
-	}
-	return foundit
-}
+// $ aspell --help  shows installed languages
+// # apt install aspell  installs aspell and language "en"
+// # apt install aspell-es  installs addtl. language 
 
-// spellcheck returns list of suspect words, list of ok words in text
+func aspellCheck() ([]string, []string, []string) {
 
-func spellCheck(wd []string) ([]string, []string, []string) {
+	pptr = append(pptr, "☳<a name='spell'></a>")
+
+	okwords := make(map[string]int, len(wordListMapCount)) // copy of all words in the book, with freq
+	for k, v := range wordListMapCount {
+		okwords[k] = v
+	}
+
 	pptr = append(pptr, "☳<a name='spell'></a>")
 	rs := []string{} // empty rs to start aggregation
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
-	rs = append(rs, fmt.Sprintf("* %-76s *", "SPELLCHECK REPORT"))
+	rs = append(rs, fmt.Sprintf("* %-76s *", fmt.Sprintf("SPELLCHECK SUSPECT WORDS (%s)", p.Alang)))
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
+	rs = append(rs, "")
 
-	okwordlist := make(map[string]int) // cumulative words OK by successive tests
-	var willdelete []string            // words to be deleted from wordlist
+	pid := os.Getpid()
+	fnpida := fmt.Sprintf("/tmp/%da.txt", pid)
+	fnpidb := fmt.Sprintf("/tmp/%db.txt", pid)
 
-	// local wlmLocal keeps wordListMap intact with all words/frequencies
-	// local wlmLocal is pruned as words are approved during spellcheck
-	wlmLocal := make(map[string]int, len(wordListMap)) // copy of all words in the book, with freq
-	for k, v := range wordListMap {
-		// swd := strings.Replace(k, "’", "'", -1) // straighten apostrophes for spell check
-		wlmLocal[k] = v
+	mycommand := fmt.Sprintf("cp %s %s", p.Infile, fnpida)
+	out, err := exec.Command("bash", "-c", mycommand).Output()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	if p.Verbose {
-		rs = append(rs, fmt.Sprintf("  ☲unique words in text: %d words", len(wlmLocal)))
+	uselangs := strings.Split(p.Alang, ",")
+	for _, rl := range uselangs {
+
+		// note: de-alt not available on machine:galaxy. de-1901 is alternate
+		allowedLang := map[string]int{"en":1, "en_US":1, "en_GB":1, "en_CA":1,
+			"es":1, "fr":1, "de":1, "de-alt":1, "it":1}
+		_, ok := allowedLang[rl]
+		if !ok {
+			log.Fatal(err)
+		} 
+
+		// rs = append(rs, fmt.Sprintf("lang used: %s", rl))
+		mycommand = fmt.Sprintf("cat %s | aspell --encoding='utf-8' --lang=%s --list | sort | uniq > %s", fnpida, rl, fnpidb)
+		out, err = exec.Command("bash", "-c", mycommand).Output()
+		if err != nil {
+			log.Fatal(err)
+		}	
+
+		mycommand = fmt.Sprintf("cp %s %s", fnpidb, fnpida)
+		out, err = exec.Command("bash", "-c", mycommand).Output()
+		if err != nil {
+			log.Fatal(err)
+		}	
 	}
 
-	for word, count := range wlmLocal {
-		ip := sort.SearchStrings(wd, word)   // where it would insert
-		if ip != len(wd) && wd[ip] == word { // true if we found it
-			// ok by wordlist
-			okwordlist[word] = count // remember as good word
-			willdelete = append(willdelete, word)
+	mycommand = fmt.Sprintf("cat %s", fnpida)	
+	out, err = exec.Command("bash", "-c", mycommand).Output()
+		if err != nil {
+			log.Fatal(err)
+		}	
+
+	// returns a newline separated string of words flagged by aspell
+	suspect_words := strings.Split(string(out), "\n")
+
+	// into slice
+	if len(suspect_words) > 0 {
+	    suspect_words = suspect_words[:len(suspect_words)-1]
+	}
+
+	// reduce suspect using various rules
+	i := 0
+	for ; i < len(suspect_words) ; i++ {
+		t := suspect_words[i]
+
+		// if word occurs more than 6 times, accept it
+		if wordListMapCount[t] >= 6 {
+			suspect_words = append(suspect_words[:i], suspect_words[i+1:]...)
+			i--
+			continue
+		}
+		if inGoodWordList(t) {
+			suspect_words = append(suspect_words[:i], suspect_words[i+1:]...)
+			i--
+			continue			
 		}
 	}
-
-	if p.Verbose {
-		rs = append(rs, fmt.Sprintf("  approved by dictionary: %d words", len(willdelete)))
-	}
-
-	// delete words that have been OKd by being in the dictionary
-	for _, word := range willdelete {
-		delete(wlmLocal, word)
-	}
-	willdelete = nil // clear the list of words to delete
-
-	// fmt.Printf("%+v\n", willdelete)
-	// os.Exit(1)
-
-	// fmt.Println(len(wlmLocal))
-	// fmt.Println(len(okwordlist))
-
-	// typically at this point, I have taken the 8995 unique words in the book
-	// and sorted it into 7691 words found in the dictionary and 1376 words unresolved
-
-	// fmt.Printf("%+v\n", wlmLocal)
-	// try to approve words that are capitalized by testing them lower case
-
-	/* =============================================================================== */
-
-	// check words ok by depossessive
-	re := regexp.MustCompile(`’s$`)
-	for word, count := range wlmLocal {
-		if re.MatchString(word) {
-			testword := strings.Replace(word, "’s", "", -1) // drop suffix
-			ip := sort.SearchStrings(wd, testword)          // where it would insert
-			if ip != len(wd) && wd[ip] == testword {        // true if we found it
-				okwordlist[word] = count // remember as good word
-				willdelete = append(willdelete, word)
-			}
-		}
-	}
-
-	if p.Verbose {
-		rs = append(rs, fmt.Sprintf("  approved by depossessive: %d words", len(willdelete)))
-	}
-
-	// delete words that have been OKd by their depossessive form being in the dictionary
-	for _, word := range willdelete {
-		delete(wlmLocal, word)
-	}
-	willdelete = nil // clear the list of words to delete
-
-	/* =============================================================================== */
-
-	// check words ok by plural -> singular
-	re = regexp.MustCompile(`s$`)
-	for word, count := range wlmLocal {
-		if re.MatchString(word) { // ends with s
-			testword := word[:len(word)-1]           // drop the s
-			ip := sort.SearchStrings(wd, testword)   // where it would insert
-			if ip != len(wd) && wd[ip] == testword { // true if we found it
-				okwordlist[word] = count // remember as good word
-				willdelete = append(willdelete, word)
-			}
-		}
-	}
-
-	if p.Verbose {
-		rs = append(rs, fmt.Sprintf("  approved by plural/singular: %d words", len(willdelete)))
-	}
-
-	// delete words that have been OKd by their singular form being in the dictionary
-	for _, word := range willdelete {
-		delete(wlmLocal, word)
-	}
-	willdelete = nil // clear the list of words to delete
-
-	/* =============================================================================== */
-
-	// check words ok by dropping "’ll" as in that’ll or there’ll
-	re = regexp.MustCompile(`’ll$`)
-	for word, count := range wlmLocal {
-		if re.MatchString(word) { // ends with ’ll
-			testword := word[:len(word)-3]           // drop the ’ll
-			ip := sort.SearchStrings(wd, testword)   // where it would insert
-			if ip != len(wd) && wd[ip] == testword { // true if we found it
-				okwordlist[word] = count // remember as good word
-				willdelete = append(willdelete, word)
-			}
-		}
-	}
-
-	if p.Verbose {
-		rs = append(rs, fmt.Sprintf("  approved by ’ll contraction: %d words", len(willdelete)))
-	}
-
-	// delete words that have been OKd by their ’ll form being in the dictionary
-	for _, word := range willdelete {
-		delete(wlmLocal, word)
-	}
-	willdelete = nil // clear the list of words to delete
-
-	/* =============================================================================== */
-
-	// check: words OK by their lowercase form being in the dictionary
-	lcwordlist := make(map[string]int) // all words in lower case
-
-	for word, count := range wlmLocal {
-		lcword := strings.ToLower(word)
-		ip := sort.SearchStrings(wd, lcword)   // where it would insert
-		if ip != len(wd) && wd[ip] == lcword { // true if we found it
-			// ok by lowercase
-			lcwordlist[word] = count // remember (uppercase versions) as good word
-			okwordlist[word] = count // remember as good word
-			willdelete = append(willdelete, word)
-		}
-	}
-
-	if p.Verbose {
-		rs = append(rs, fmt.Sprintf("  approved by lowercase form: %d words", len(willdelete)))
-	}
-
-	// delete words that have been OKd by their lowercase form being in the dictionary
-	for _, word := range willdelete {
-		delete(wlmLocal, word)
-	}
-	willdelete = nil // clear the list of words to delete
-
-	/* =============================================================================== */
-
-	// new 28-Jan-2019: if a word is in all upper case,
-	// check if OK by their titlecase form being in the dictionary
-	// will approve BRITISH since British is in dictionary
-	tcwordlist := make(map[string]int) // all words in title case
-
-	for word, count := range wlmLocal {
-		if strings.ToUpper(word) == word { // it is upper case
-			tcword := strings.Title(strings.ToLower(word))
-			ip := sort.SearchStrings(wd, tcword)   // where it would insert
-			if ip != len(wd) && wd[ip] == tcword { // true if we found it
-				// ok by title case
-				tcwordlist[word] = count // remember upper case version as good word
-				okwordlist[word] = count // remember as good word
-				willdelete = append(willdelete, word)
-			}
-		}
-	}
-
-	if p.Verbose {
-		rs = append(rs, fmt.Sprintf("  approved by titlecase form: %d words", len(willdelete)))
-	}
-
-	// delete words that have been OKd by their lowercase form being in the dictionary
-	for _, word := range willdelete {
-		delete(wlmLocal, word)
-	}
-	willdelete = nil // clear the list of words to delete
-
-	/* =============================================================================== */
-
-	// fmt.Printf("%+v\n", wlmLocal)
-	// fmt.Println(len(wlmLocal))
-	// fmt.Println(len(lcwordlist))
-
-	// some of these are hyphenated. Break those words on hyphens and see if all the individual parts
-	// are valid words. If so, approve the hyphenated version
-
-	hywordlist := make(map[string]int) // hyphenated words OK by all parts being words
-
-	for word, count := range wlmLocal {
-		t := strings.Split(word, "-")
-		if len(t) > 1 { // if it split, have hyphenated word 2 of more words
-			// we have a hyphenated word
-			allgood := true
-			for _, hpart := range t { // go over each part of hyphenated word
-				if !lookup(wd, hpart) {
-					allgood = false // any part can fail it
-				}
-			}
-			if allgood { // all parts of the hyhenated word are words
-				hywordlist[word] = count
-				okwordlist[word] = count // remember as good word
-				willdelete = append(willdelete, word)
-			}
-		}
-	}
-
-	if p.Verbose {
-		rs = append(rs, fmt.Sprintf("  approved by dehyphenation: %d words", len(willdelete)))
-	}
-
-	// delete words that have been OKd by dehyphenation
-	for _, word := range willdelete {
-		delete(wlmLocal, word)
-	}
-	willdelete = nil // clear the list of words to delete
-
-	/* =============================================================================== */
-
-	// fmt.Println(len(wlmLocal))
-	// fmt.Println(len(hywordlist))
-
-	// of the 738 unresolved words before dehyphenation checks, now an additional
-	// 235 have been approved and 503 remain unresolved
-
-	/*
-		// some "words" are entirely numerals. approve those
-		for word, _ := range wlmLocal {
-			if _, err := strconv.Atoi(word); err == nil {
-				okwordlist[word] = 1 // remember as good word
-				willdelete = append(willdelete, word)
-			}
-		}
-	*/
-
-	// some "words" are entirely numerals or numerals with common fractions. approve those
-	for word, _ := range wlmLocal {
-		dofrac := func(r rune) rune {
-			if strings.ContainsRune("⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞¼½¾", r) {
-				return '0'
-			}
-			return r
-		}
-		orig_word := word
-		word = strings.Map(dofrac, word)
-		if _, err := strconv.Atoi(word); err == nil {
-			okwordlist[orig_word] = 1 // remember as good word
-			willdelete = append(willdelete, orig_word)
-		}
-	}
-
-	if p.Verbose {
-		rs = append(rs, fmt.Sprintf("  approved pure numerics: %d words", len(willdelete)))
-	}
-	// delete words that are entirely numeric
-	for _, word := range willdelete {
-		delete(wlmLocal, word)
-	}
-	willdelete = nil // clear the list of words to delete
-
-	/* =============================================================================== */
-
-	// some "words" are numerals with "th", "nd", "rd", "st" (17th, 22nd, 3rd, 31st)
-	re = regexp.MustCompile(`\d+(th|nd|rd|st)`)
-	for word, _ := range wlmLocal {
-		if re.MatchString(word) {
-			okwordlist[word] = 1 // remember as good word
-			willdelete = append(willdelete, word)
-		}
-	}
-
-	if p.Verbose {
-		rs = append(rs, fmt.Sprintf("  approved mixed numerics: %d words", len(willdelete)))
-	}
-
-	// delete words that are mixed numeric
-	for _, word := range willdelete {
-		delete(wlmLocal, word)
-	}
-	willdelete = nil // clear the list of words to delete
-
-	/* =============================================================================== */
-
-	for word, _ := range wlmLocal {
-
-		if strings.HasSuffix(word, "’ll") {
-			t := strings.Replace(word, "’ll", "", -1)
-			ip := sort.SearchStrings(wd, t)                     // where it would insert
-			iplow := sort.SearchStrings(wd, strings.ToLower(t)) // where lc would insert
-			if (ip != len(wd) && wd[ip] == t) ||
-				(iplow != len(wd) && wd[iplow] == strings.ToLower(t)) { // true if we found it
-				okwordlist[word] = 1 // remember as good word
-				willdelete = append(willdelete, word)
-			}
-		}
-
-		if strings.HasSuffix(word, "’ve") {
-			t := strings.Replace(word, "’ve", "", -1)
-			ip := sort.SearchStrings(wd, t)                     // where it would insert
-			iplow := sort.SearchStrings(wd, strings.ToLower(t)) // where lc would insert
-			if (ip != len(wd) && wd[ip] == t) ||
-				(iplow != len(wd) && wd[iplow] == strings.ToLower(t)) { // true if we found it
-				okwordlist[word] = 1 // remember as good word
-				willdelete = append(willdelete, word)
-			}
-		}
-
-		if strings.HasSuffix(word, "’d") {
-			t := strings.Replace(word, "’d", "", -1)
-			ip := sort.SearchStrings(wd, t)                     // where it would insert
-			iplow := sort.SearchStrings(wd, strings.ToLower(t)) // where lc would insert
-			if (ip != len(wd) && wd[ip] == t) ||
-				(iplow != len(wd) && wd[iplow] == strings.ToLower(t)) { // true if we found it
-				okwordlist[word] = 1 // remember as good word
-				willdelete = append(willdelete, word)
-			}
-		}
-
-		if strings.HasSuffix(word, "n’t") {
-			t := strings.Replace(word, "n’t", "", -1)
-			ip := sort.SearchStrings(wd, t)                     // where it would insert
-			iplow := sort.SearchStrings(wd, strings.ToLower(t)) // where lc would insert
-			if (ip != len(wd) && wd[ip] == t) ||
-				(iplow != len(wd) && wd[iplow] == strings.ToLower(t)) { // true if we found it
-				okwordlist[word] = 1 // remember as good word
-				willdelete = append(willdelete, word)
-			}
-		}
-
-		if strings.HasSuffix(word, "’s") {
-			t := strings.Replace(word, "’s", "", -1)
-			ip := sort.SearchStrings(wd, t)                     // where it would insert
-			iplow := sort.SearchStrings(wd, strings.ToLower(t)) // where lc would insert
-			if (ip != len(wd) && wd[ip] == t) ||
-				(iplow != len(wd) && wd[iplow] == strings.ToLower(t)) { // true if we found it
-				okwordlist[word] = 1 // remember as good word
-				willdelete = append(willdelete, word)
-			}
-		}
-
-	}
-
-	if p.Verbose {
-		rs = append(rs, fmt.Sprintf("  approved by removing contraction: %d words", len(willdelete)))
-	}
-	for _, word := range willdelete {
-		delete(wlmLocal, word)
-	}
-	willdelete = nil // clear the list of words to delete
-
-	/* =============================================================================== */
-
-	frwordlist := make(map[string]int) // words ok by frequency occuring 4 or more times
-
-	// some words occur many times. Accept them by frequency if they appear four or more times
-	// spelled the same way
-	for word, count := range wlmLocal {
-		if count >= 4 {
-			frwordlist[word] = count
-			okwordlist[word] = count // remember as good word
-			willdelete = append(willdelete, word)
-		}
-	}
-
-	if p.Verbose {
-		rs = append(rs, fmt.Sprintf("  approved by frequency: %d words", len(willdelete)))
-	}
-	// delete words approved by frequency
-	for _, word := range willdelete {
-		delete(wlmLocal, word)
-	}
-	willdelete = nil // clear the list of words to delete
-
-	// sort remaining words in wlmLocal
-	var keys []string
-	for k := range wlmLocal {
-		keys = append(keys, k)
-	}
-	// sort.Strings(keys)
-	// case insensitive sort
-	sort.Slice(keys, func(i, j int) bool { return strings.ToLower(keys[i]) < strings.ToLower(keys[j]) })
 
 	// show each word in context
 	var sw []string                    // suspect words
 	lcreported := make(map[string]int) // map to hold downcased words reported
 
-	if p.Verbose {
-		rs = append(rs, "--------------------------------------------------------------------------------☷")
-	}
+	// rs = append(rs, fmt.Sprintf("Suspect words:"))
+	re4 := regexp.MustCompile(`☰`)
 	
-	rs = append(rs, fmt.Sprintf("Suspect words"))
-	for _, word := range keys {
+	for _, word := range suspect_words {
 
 		// if I've reported the word in any case, don't report it again
 		lcword := strings.ToLower(word)
@@ -1073,47 +542,48 @@ func spellCheck(wd []string) ([]string, []string, []string) {
 			lcreported[lcword] = 1
 		}
 
-		// word = strings.Replace(word, "'", "’", -1)
 		sw = append(sw, word)                    // simple slice of only the word
 		rs = append(rs, fmt.Sprintf("%s", word)) // word we will show in context
-		// show word in text
-		for n, line := range wbuf { // every line
-			for _, t2 := range lwl[n] { // every word on that line
-				if t2 == word { // it is here
-					re := regexp.MustCompile(`(?i)(^|\P{L})(` + word + `)(\P{L}|$)`)
+
+
+		re := regexp.MustCompile(`(^|\P{L})(` + word + `)(\P{L}|$)`)
+
+		// make sure there is an entry for this word in the line map
+		if _, ok := wordListMapLines[word]; ok {
+			theLines := strings.Split(wordListMapLines[word], ",")
+			reported := 0
+			for _, theline := range theLines {
+				where, _ := strconv.Atoi(theline)
+				line := wbuf[where-1]  // 1-based in map
+				if re.MatchString(line) { 
+					reported++
 					line = re.ReplaceAllString(line, `$1☰$2☷$3`)
-					re = regexp.MustCompile(`☰`)
-					loc := re.FindStringIndex(line)
+					loc := re4.FindStringIndex(line) // the start of highlighted word
 					line = getParaSegment(line, loc[0])
-					rs = append(rs, fmt.Sprintf("  %6d: %s", n+1, line)) // 1-based
+					rs = append(rs, fmt.Sprintf("  %6d: %s", where, line)) // 1-based				
+				}
+				if reported > 1 && len(theLines) > 2 {
+					rs = append(rs, fmt.Sprintf("  ...%6d more", len(theLines)-2)) 
 					break
 				}
 			}
 		}
+		
 		rs = append(rs, "")
 	}
 
-	// rs = append(rs, fmt.Sprintf("  ☲good words in text: %d words", len(okwordlist)))
-	// rs = append(rs, fmt.Sprintf("  suspect words in text: %d words☷", len(sw)))
-
-	var ok []string
-	for word, _ := range okwordlist {
-		ok = append(ok, word)
+	// remove all suspect words from okwords map
+	for _, s := range sw {
+		delete(okwords, s)
 	}
 
-	if len(sw) == 0 {
-		rs = append(rs, "  none")
-		rs[0] = "☲" + rs[0] // style dim
-	} else {
-		rs[0] = "☳" + rs[0] // style black
+	// convert to slice and return
+	okslice := []string{}
+	for s, _ := range okwords {
+		okslice = append(okslice, s)
 	}
-	rs = append(rs, "")
-	rs[len(rs)-1] += "☷" // close style
 
-	// return sw: list of suspect words and ok: list of good words in text
-	// and rs, the report
-
-	return sw, ok, rs
+	return sw, okslice, rs
 }
 
 /* ********************************************************************** */
@@ -1225,20 +695,20 @@ func tcHypConsistency(wb []string) []string {
 	rs = append(rs, "")
 
 	count := 0
-	for s, _ := range wordListMap {
+	for s, _ := range wordListMapCount {
 		if strings.Contains(s, "-") {
 			// hyphenated version present
 			s2 := strings.Replace(s, "-", "", -1)
 			// create non-hyphenated version and look for it
 			reported := false
-			for t, _ := range wordListMap {
+			for t, _ := range wordListMapCount {
 				if reported {
 					break
 				}
 				if t == s2 {
 					// found it. report it
 					count++
-					rs = append(rs, fmt.Sprintf("%s (%d) ❬-❭ %s (%d)", s2, wordListMap[s2], s, wordListMap[s]))
+					rs = append(rs, fmt.Sprintf("%s (%d) ❬-❭ %s (%d)", s2, wordListMapCount[s2], s, wordListMapCount[s]))
 					sdone, s2done := false, false
 					for n, line := range wb {
 						re1 := regexp.MustCompile(`(\P{L}` + s + `\P{L})`)
@@ -1286,7 +756,7 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 	count := 0
 
 	re := regexp.MustCompile(`\p{L}\p{L}+ \p{L}\p{L}+`) // two words sep by space
-	for s, _ := range wordListMap {
+	for s, _ := range wordListMapCount {
 		if strings.Contains(s, "-") {
 			s1done, s2done := false, false
 			reported := false
@@ -1456,10 +926,10 @@ func tcCurlyQuoteCheck(wb []string) []string {
 }
 
 // scanno check
-// iterate each scanno word from pptext.dat
-// look for that word on each line of the book
-// scannos list in pptext.dat
+// iterate each scanno word from list in scannos.txt
 //   from https://www.pgdp.net/c/faq/stealth_scannos_eng_common.txt
+// look for that word on each line of the book
+
 func scannoCheck(wb []string) []string {
 	rs := []string{}
 	rs = append(rs, "----- scanno check -----------------------------------------------------------")
@@ -2432,7 +1902,7 @@ func tcGutChecks(wb []string) []string {
 			// or after the second character if the first char is "’"
 			// but not if the word is in the good word list or if it occurs more than once
 			reportme := false
-			if wordListMap[word] < 2 && !inGoodWordList(word) {
+			if wordListMapCount[word] < 2 && !inGoodWordList(word) {
 				if strings.HasPrefix(word, "’") {
 					if re0003a2.MatchString(word) && re0003b2.MatchString(word) {
 						reportme = true
@@ -2651,31 +2121,23 @@ okabbrev = ("cent", "cents", "viz", "vol", "vols", "vid", "ed", "al", "etc",
 /*  getWordList
 	input: a slice of strings that is the book
     output: a map of words and frequency of occurence of each word
+    	    a map of words and the line numbers where they appeared
 */
 
-func getWordList(wb []string) map[string]int {
+func getWordList(wb []string) (map[string]int, map[string]string) {
 	f := func(c rune) bool {
 		return !unicode.IsLetter(c) && !unicode.IsNumber(c)
 	}
 	m := make(map[string]int) // map to hold words, counts
+	ml := make(map[string]string) // map to hold words, lines
 
-	// hyphenated words "auburn-haired" become "auburn①haired"
-	// to preserve that it is one (hyphenated) word.
-	// same for single quotes within words and apostrophes starting words
-	var re1 = regexp.MustCompile(`(\p{L})\-(\p{L})`)
-	var re2 = regexp.MustCompile(`(\p{L})’(\p{L})`)
-	var re3 = regexp.MustCompile(`(\p{L})‘(\p{L})`)
-	var re4 = regexp.MustCompile(`(\P{L}|^)’(\p{L})`)
-	for _, element := range wb {
-		// need to preprocess each line
-		// need this twice to handle alternates i.e. r-u-d-e
-		element := re1.ReplaceAllString(element, `${1}①${2}`)
-		element = re1.ReplaceAllString(element, `${1}①${2}`)
+	// preserve single quotes within words and apostrophes starting words
+	var re2 = regexp.MustCompile(`(\p{L})’(\p{L})`) // letter’letter
+	var re4 = regexp.MustCompile(`(\P{L}|^)’(\p{L})`) // start of line or word boundary
+	for n, element := range wb {
 		// need this twice to handle alternates i.e. fo’c’s’le
 		element = re2.ReplaceAllString(element, `${1}②${2}`)
 		element = re2.ReplaceAllString(element, `${1}②${2}`)
-		element = re3.ReplaceAllString(element, `${1}③${2}`)
-		element = re3.ReplaceAllString(element, `${1}③${2}`)
 		element = re4.ReplaceAllString(element, `${1}②${2}`)
 		element = re4.ReplaceAllString(element, `${1}②${2}`)
 		// all words with special characters are protected
@@ -2683,19 +2145,22 @@ func getWordList(wb []string) map[string]int {
 
 		for _, word := range t {
 			// put the special characters back in there
-			s := strings.Replace(word, "①", "-", -1)
-			s = strings.Replace(s, "②", "’", -1)
-			s = strings.Replace(s, "③", "‘", -1)
-			// and build the map
+			s := strings.Replace(word, "②", "’", -1)
+			// and build the frequency map
 			if _, ok := m[s]; ok { // if it is there already, increment
 				m[s] = m[s] + 1
 			} else {
 				m[s] = 1
 			}
+			// and build the line number map
+			if _, ok := ml[s]; ok { // if it is there already, add this line number
+				ml[s] = ml[s] + fmt.Sprintf(",%d", n+1)
+			} else {  // else start a new entry for this word
+				ml[s] = fmt.Sprintf("%d", n+1)
+			}
 		}
 	}
-	// fmt.Println(m)
-	return m
+	return m, ml
 }
 
 // protect special cases:
@@ -2775,6 +2240,40 @@ func minimum(a, b, c int) int {
 	return c
 }
 
+//
+
+func showWordInContext(word string) []string {
+	re := regexp.MustCompile(`(^|\P{L})(` + word + `)(\P{L}|$)`)
+	re4 := regexp.MustCompile(`☰`)
+	rs := []string{}
+
+	// make sure there is an entry for this word in the line map
+	if _, ok := wordListMapLines[word]; ok {
+		theLines := strings.Split(wordListMapLines[word], ",")
+		reported := 0
+		for _, theline := range theLines {
+			where, _ := strconv.Atoi(theline)
+			line := wbuf[where-1]  // 1-based in map
+			if re.MatchString(line) { 
+				reported++
+				line = re.ReplaceAllString(line, `$1☰$2☷$3`)
+				loc := re4.FindStringIndex(line) // the start of highlighted word
+				line = getParaSegment(line, loc[0])
+				rs = append(rs, fmt.Sprintf("  %6d: %s", where, line)) // 1-based				
+			}
+			if reported > 1 && len(theLines) > 2 {
+				rs = append(rs, fmt.Sprintf("  ...%6d more", len(theLines)-2)) 
+				break
+			}
+		}
+	} else {
+		// no entry for word in word map.
+		// do manual search
+		rs = append(rs, "internal error: word not in wordListMapLines. please report")
+	}
+	return rs
+}
+
 // iterate over every suspect word at least six runes long
 // case insensitive
 // looking for a good word in the text that is "near"
@@ -2783,6 +2282,7 @@ func levencheck(okwords []string, suspects []string) []string {
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
 	rs = append(rs, fmt.Sprintf("* %-76s *", "LEVENSHTEIN (EDIT DISTANCE) CHECKS"))
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
+	rs = append(rs, "")
 
 	// wordsonline is a slice. each "line" contains a map of words on that line
 	var wordsonline []map[string]struct{}
@@ -2838,49 +2338,19 @@ func levencheck(okwords []string, suspects []string) []string {
 			dist := levenshtein([]rune(suspectlc), []rune(okwordlc))
 
 			if dist < 2 {
-				// get counts of suspect word and ok word. case insenstitve
-				suspectwordcount := 0
-				okwordcount := 0
-				for n, _ := range wbuf {
-					lcwordsonthisline := lcwordsonline[n]
-					if _, ok := lcwordsonthisline[suspectlc]; ok {
-						suspectwordcount += 1
-					}
-					if _, ok := lcwordsonthisline[okwordlc]; ok {
-						okwordcount += 1
-					}
-				}
-				rs = append(rs, fmt.Sprintf("%s(%d):%s(%d)", suspectlc, suspectwordcount,
-					okwordlc, okwordcount))
+
+				countsuspect := wordListMapCount[suspect]  ///
+				countokword := wordListMapCount[okword]  ///
+
+				if countokword == 0 || countsuspect == 0 { break }
+
+				rs = append(rs, fmt.Sprintf("%s(%d):%s(%d)", suspectlc, countsuspect,
+					okwordlc, countokword)) ///
 				nreports++
 
-				// report only one line with suspect word
-				count := 0
-				for n, line := range wbuf {
-					lcwordsonthisline := lcwordsonline[n]
-					if _, ok := lcwordsonthisline[suspectlc]; ok {
-						if count == 0 {
-							re := regexp.MustCompile(`(?i)(` + suspectlc + `)`)
-							line = re.ReplaceAllString(line, `☰$1☷`)
-							rs = append(rs, fmt.Sprintf("%6d: %s", n+1, wraptext9(line)))  // 1=based
-						}
-						count += 1
-					}
-				}
+				rs = append(rs,  showWordInContext(okword)...)
+				rs = append(rs,  showWordInContext(suspect)...)
 
-				// report one line of ok word
-				count = 0
-				for n, line := range wbuf {
-					lcwordsonthisline := lcwordsonline[n] // a set of words on this line
-					if _, ok := lcwordsonthisline[okwordlc]; ok {
-						if count == 0 {
-							re := regexp.MustCompile(`(?i)(` + okwordlc + `)`)
-							line = re.ReplaceAllString(line, `☰$1☷`)
-							rs = append(rs, fmt.Sprintf("%6d: %s", n+1, wraptext9(line)))  // 1=based
-						}
-						count += 1
-					}
-				}
 				rs = append(rs, "")
 				suspect_reported = true // report it once
 			}
@@ -2912,6 +2382,7 @@ func jeebies() []string {
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
 	rs = append(rs, fmt.Sprintf("* %-76s *", "JEEBIES REPORT"))
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
+	rs = append(rs, "")
 
 	wbuf = append(wbuf, "") // ensure last paragraph converts
 	s := ""
@@ -3201,8 +2672,8 @@ func readDict(infile string) []string {
 	return wd
 }
 
-// scanno word list in in pptext.dat bracketed by
-// *** BEGIN SCANNOS *** and *** END SCANNOS ***
+// scanno word list in in scannos.txt file
+
 func readScannos(infile string) []string {
 	file, err := os.Open(infile)
 	if err != nil {
@@ -3211,30 +2682,18 @@ func readScannos(infile string) []string {
 	defer file.Close()
 	swl := []string{} // scanno word list
 	scanner := bufio.NewScanner(file)
-	keep := false
 	for scanner.Scan() {
-		if scanner.Text() == "*** BEGIN SCANNOS ***" {
-			keep = true
-			continue
-		}
-		if scanner.Text() == "*** END SCANNOS ***" {
-			keep = false
-			continue
-		}
-		if keep {
-			swl = append(swl, scanner.Text())
-		}
+		swl = append(swl, scanner.Text())
 	}
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
-
 	// remove BOM if present
 	swl[0] = strings.TrimPrefix(swl[0], BOM)
 	return swl
 }
 
-// he word list and be word list in in pptext.dat bracketed by
+// he word list and be word list in in patterns.txt bracketed by
 // *** BEGIN HE *** and *** END HE ***
 func readHeBe(infile string) {
 	heMap = make(map[string]int)
@@ -3284,7 +2743,7 @@ func readHeBe(infile string) {
 	}
 }
 
-// read in the chosen word list (dictionary)
+// read in the chosen word list (good word list)
 // convert any straight quote marks to apostrophes
 
 func readWordList(infile string) []string {
@@ -3317,7 +2776,7 @@ func doparams() params {
 	flag.StringVar(&p.Infile, "i", "book-utf8.txt", "input file")
 	flag.StringVar(&p.Outfile, "o", "report.txt", "output report file")
 	flag.StringVar(&p.Outfileh, "h", "report.html", "output report file (HTML)")
-	flag.StringVar(&p.Wlang, "l", "master.en", "wordlist language")
+	flag.StringVar(&p.Alang, "a", "en", "aspell wordlist language")
 	flag.StringVar(&p.GWFilename, "g", "", "good words file")
 	flag.BoolVar(&p.Experimental, "x", false, "experimental (developers only)")
 	flag.BoolVar(&p.Nolev, "d", false, "do not run Levenshtein distance tests")
@@ -3329,9 +2788,10 @@ func doparams() params {
 	return p
 }
 
+var runStartTime time.Time
 func main() {
 	loc, _ := time.LoadLocation("America/Denver")
-	start := time.Now()
+	runStartTime = time.Now()
 	pptr = append(pptr, fmt.Sprintf("********************************************************************************"))
 	pptr = append(pptr, fmt.Sprintf("* %-76s *", "PPTEXT RUN REPORT"))
 	pptr = append(pptr, fmt.Sprintf("* %76s *", "started "+time.Now().In(loc).Format(time.RFC850)))
@@ -3361,6 +2821,7 @@ func main() {
 		_, file := filepath.Split(p.Infile)
 		pptr = append(pptr, fmt.Sprintf("processing file: %s", file))
 	}
+
 	// report status of verbose flag.
 	if p.Verbose {
 		pptr = append(pptr, fmt.Sprintf("verbose mode: %s", "on"))
@@ -3368,49 +2829,11 @@ func main() {
 		pptr = append(pptr, fmt.Sprintf("verbose mode: %s", "off"))
 	}
 
-	/*************************************************************************/
-	/* working dictionary (wdic)                                             */
-	/* create from words in dictionary in the language specified             */
-	/* and words from optional project-specific good_words.txt file          */
-	/* result are all known good words in a sorted list                      */
-	/*************************************************************************/
+	scannoWordlist = readScannos(filepath.Join(loc_exec, "scannos.txt"))
 
-	// language-specific wordlists are in a subdirectory of the executable
+	readHeBe(filepath.Join(loc_exec, "hebelist.txt"))
 
-	// if the user has used the -w option, a language file has been specified
-	// otherwise accept default
-	// 07-Jan-2019 allow multiple languages
-
-	alllang := strings.Split(p.Wlang, ",")
-	alldict := []string{}
-	for _, lang := range alllang {
-		where := filepath.Join(loc_exec, "/wordlists/"+lang+".txt")
-		if _, err := os.Stat(where); !os.IsNotExist(err) {
-			wdic = readDict(where)
-			pptr = append(pptr, fmt.Sprintf("using wordlist: %s (%d words)", lang, len(wdic)))
-			alldict = append(alldict, wdic...)
-		}
-	}
-	// word lists are concatenated; remove duplicates
-
-    keys := make(map[string]bool)
-    udict := []string{} 
-    for _, entry := range alldict {
-        if _, value := keys[entry]; !value {
-            keys[entry] = true
-            udict = append(udict, entry)
-        }
-    }    
-    // put unique word list back into wdic for merge with goodwords, sort, etc.
-	wdic = udict
-
-	// require a pptext.dat file holding scannos list and jeebies he/be lists
-	scannoWordlist = readScannos(filepath.Join(loc_exec, "pptext.dat"))
-	readHeBe(filepath.Join(loc_exec, "pptext.dat"))
-
-	// now the good word list.
-	// good words may include curly quotes. convert to straight quotes
-	// before merging into dictionary
+	// now the good word list into gw []string
 	if len(p.GWFilename) > 0 { // a good word list was specified
 		if _, err := os.Stat(p.GWFilename); !os.IsNotExist(err) { // it exists
 			_, file := filepath.Split(p.GWFilename)
@@ -3420,21 +2843,13 @@ func main() {
 			for i, w := range goodWordlist {
 				goodWordlist[i] = strings.Replace(w, "'", "’", -1)
 			}
-			wdic = append(wdic, goodWordlist...) // add good_words into dictionary
+			gw = append(gw, goodWordlist...) // add good_words into dictionary
 		} else { // it does not exist
 			pptr = append(pptr, fmt.Sprintf("no %s found", p.GWFilename))
 		}
 	} else {
 		pptr = append(pptr, "no good words file specified")
 	}
-
-	// straight quotes to curly in wordlists
-	for i,_ := range wdic {
-		wdic[i] = strings.Replace(wdic[i], "'", "’", -1)
-	}
-
-	// need the words in a sorted list for binary search later
-	sort.Strings(wdic)
 
 	/*************************************************************************/
 	/* line word list                                                        */
@@ -3450,9 +2865,8 @@ func main() {
 	/* capitalization retained; hyphens, apostrophes protected               */
 	/*************************************************************************/
 
-	wordListMap = getWordList(wbuf)
-	// fmt.Println(wordListMap)
-
+	wordListMapCount, wordListMapLines = getWordList(wbuf)
+	
 	/*************************************************************************/
 	/* paragraph buffer (pb)                                                 */
 	/* the user source file one paragraph per line                           */
@@ -3513,9 +2927,8 @@ func main() {
 		// pptr = append(pptr, fmt.Sprintf("smart quote check took: %.2f seconds", t2.Sub(t1).Seconds()))
 	}
 
-	// spellcheck
-	// returns list of suspect words, ok words used in text
-	sw, okwords, rsx := spellCheck(wdic)
+	// aspellCheck
+	sw, okwords, rsx := aspellCheck()
 	pptr = append(pptr, rsx...)
 
 	// levenshtein check
@@ -3554,9 +2967,9 @@ func main() {
 
 	pptr = append(pptr, "--------------------------------------------------------------------------------")
 	pptr = append(pptr, "run complete")
-	// pptr = append(pptr, fmt.Sprintf("execution time: %s", time.Since(start)))
+	// pptr = append(pptr, fmt.Sprintf("execution time: %s", time.Since(runStartTime)))
 	t2 := time.Now()
-	pptr = append(pptr, fmt.Sprintf("execution time: %.2f seconds", t2.Sub(start).Seconds()))
+	pptr = append(pptr, fmt.Sprintf("execution time: %.2f seconds", t2.Sub(runStartTime).Seconds()))
 
 	saveText(pptr, p.Outfile, p.NoBOM, p.UseLF)
 	saveHtml(pptr, p.Outfileh, p.NoBOM, p.UseLF)
