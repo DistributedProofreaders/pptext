@@ -4,6 +4,7 @@ Usage
 -----
 
 with all defaults: `pptext`
+
     will run `pptext` using the input file `book-utf8.txt`
     and the data file `good_words.txt` if that file
     is present. The program will generate
@@ -12,11 +13,13 @@ with all defaults: `pptext`
 to see all options: `pptext --help` in a command line.
 
 defaults are:
+
     source file: book-utf8.txt (or specify with "-i filename.txt")
     report file: report.txt (or specify with "-o reportname.txt")
     good words list: good_words.txt ("-g otherlist.txt")
 
 flags are:
+
     -a string
       	aspell wordlist language (default "en")
     -d	do not run Levenshtein distance tests
@@ -37,6 +40,7 @@ flags are:
     -x	experimental (developers only)
 
 data files:
+
     scannos.txt  list of common scannos, one per line
     hebelist.txt list of he/be pattern counts
 
