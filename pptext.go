@@ -24,91 +24,21 @@ import (
 	"os/exec"
 )
 
-const VERSION string = "2019.02.12"
+const VERSION string = "2019.02.13"
 
 var sw []string // suspect words list
-var gw []string // good words list
-
 var rs []string // array of strings for local aggregation
 var pptr []string // pptext report
-
 var puncStyle string // punctuation style American or British
 
-// return true if slice contains string
-func contains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
-}
+// scanno list. all lower case. curly apostrophes
+var scannoWordlist []string // scanno word list
 
-// text-wrap string into string with embedded newlines
-// with leader 9 spaces after first
-func wraptext9(s string) string {
-	s2 := ""
-	runecount := 0
-	// rc := utf8.RuneCountInString(s)
-	for len(s) > 0 {
-		r, size := utf8.DecodeRuneInString(s) // first
-		runecount++
-		// replace space with newline (break on space)
-		if runecount >= 70 && r == ' ' {
-			s2 += "\n         "
-			runecount = 0
-		} else {
-			s2 += string(r) // append single rune to string
-		}
-		s = s[size:] // chop off rune
-	}
-	return s2
-}
+// good word list. may have straight or curly apostrophes, mixed case
+var goodWordlist []string   // good word list specified by user
 
-// text-wrap string into string with embedded newlines
-// left indent 2 spaces
-func wraptext2(s string) string {
-	re := regexp.MustCompile(`\s+`)
-	s = re.ReplaceAllString(s, " ")
-	s2 := "  "  // start with indent
-	runecount := 0
-	for utf8.RuneCountInString(s) > 0 {
-		r, size := utf8.DecodeRuneInString(s) // first rune
-		runecount++  // how many we have collected
-		// first space after rune #68 becomes newline
-		if runecount >= 68 && r == ' ' {
-			s2 += "\n  "
-			runecount = 0
-		} else {
-			s2 += string(r) // append single rune to string
-		}
-		s = s[size:] // chop off rune
-	}
-	return s2
-}
-
-/* ********************************************************************** */
-/*                                                                        */
-/* from params.go                                                         */
-/*                                                                        */
-/* ********************************************************************** */
-
-type params struct {
-	Infile       string
-	Outfile      string
-	Outfileh     string
-	Wlang        string
-	Alang 		 string
-	GWFilename   string
-	Debug		 bool
-	Nolev        bool
-	Nosqc        bool
-	NoBOM        bool
-	UseLF        bool
-	Verbose      bool
-}
-
-var p params
+// mixed case ok words in text
+var okwords []string   // ok words in text
 
 // the lwl is a slice of slices of strings, one per line. order maintained
 // lwl[31] contains a slice of strings containing the words on line "31"
@@ -133,8 +63,107 @@ var wbuf []string
 var heMap map[string]int
 var beMap map[string]int
 
-var scannoWordlist []string // scanno word list
-var goodWordlist []string   // good word list specified by user
+/* ********************************************************************** */
+/*                                                                        */
+/* utility functions                                                      */
+/*                                                                        */
+/* ********************************************************************** */
+
+// return true if slice contains string
+//
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}
+
+// return true if both straight and curly quotes detected
+//
+func straightCurly(lpb []string) bool {
+	curly := false
+	straight := false
+	for _, line := range lpb {
+		if strings.ContainsAny(line, "\"'") {
+			straight = true
+		}
+		if strings.ContainsAny(line, "“”‘’") {
+			curly = true
+		}
+		if straight && curly {
+			break
+		}
+	}
+	return straight && curly
+}
+
+// text-wrap string into string with embedded newlines
+// with leader 9 spaces after first
+//
+func wraptext9(s string) string {
+	s2 := ""
+	runecount := 0
+	// rc := utf8.RuneCountInString(s)
+	for len(s) > 0 {
+		r, size := utf8.DecodeRuneInString(s) // first
+		runecount++
+		// replace space with newline (break on space)
+		if runecount >= 70 && r == ' ' {
+			s2 += "\n         "
+			runecount = 0
+		} else {
+			s2 += string(r) // append single rune to string
+		}
+		s = s[size:] // chop off rune
+	}
+	return s2
+}
+
+// text-wrap string into string with embedded newlines
+// left indent 2 spaces
+//
+func wraptext2(s string) string {
+	re := regexp.MustCompile(`\s+`)
+	s = re.ReplaceAllString(s, " ")
+	s2 := "  "  // start with indent
+	runecount := 0
+	for utf8.RuneCountInString(s) > 0 {
+		r, size := utf8.DecodeRuneInString(s) // first rune
+		runecount++  // how many we have collected
+		// first space after rune #68 becomes newline
+		if runecount >= 68 && r == ' ' {
+			s2 += "\n  "
+			runecount = 0
+		} else {
+			s2 += string(r) // append single rune to string
+		}
+		s = s[size:] // chop off rune
+	}
+	return s2
+}
+
+/* ********************************************************************** */
+/*                                                                        */
+/* parameters                                                             */
+/*                                                                        */
+/* ********************************************************************** */
+
+type params struct {
+	Infile       string
+	Outfile      string
+	Outfileh     string
+	Wlang        string
+	Alang 		 string
+	GWFilename   string
+	Debug		 bool
+	Nolev        bool
+	Nosqc        bool
+	Verbose      bool
+}
+
+var p params
 
 /* ********************************************************************** */
 /*                                                                        */
@@ -183,29 +212,24 @@ func readText(infile string) []string {
 }
 
 // saves report to user-specified file
+// includes a BOM, saves with CRLF
 //
-func saveText(a []string, outfile string, noBOM bool, useLF bool) {
+func saveText(a []string, outfile string) {
 	f2, err := os.Create(outfile) // specified report file for text output
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer f2.Close()
-	if !noBOM { // normally provide a Byte Order Mark
-		a[0] = BOM + a[0]
-	}
+	a[0] = BOM + a[0]
 	for _, line := range a {
-		if useLF {
-			fmt.Fprintf(f2, "%s\n", line)
-		} else {
-			s := strings.Replace(line, "\n", "\r\n", -1)
-			// remove any HTML markup tokens
-			if strings.ContainsAny(line, "☳") {
-				continue
-			}
-			re := regexp.MustCompile(`[☰☱☲☳☴☵☶☷]`) // strip any tokens for HTML
-			s = re.ReplaceAllString(s, "")
-			fmt.Fprintf(f2, "%s\r\n", s)
+		s := strings.Replace(line, "\n", "\r\n", -1)
+		// remove any HTML markup tokens
+		if strings.ContainsAny(line, "☳") {  // discard these HTML-only lines
+			continue
 		}
+		re := regexp.MustCompile(`[◧☰☱☲☳☷◨]`) // strip any tokens for HTML
+		s = re.ReplaceAllString(s, "")
+		fmt.Fprintf(f2, "%s\r\n", s)
 	}
 }
 
@@ -233,7 +257,7 @@ var HFOOT = []string{
 
 // saves HTML report to report.html
 //
-func saveHtml(a []string, outfile string, noBOM bool, useLF bool) {
+func saveHtml(a []string, outfile string) {
 	f2, err := os.Create(outfile) // specified report file for text output
 	if err != nil {
 		log.Fatal(err)
@@ -245,14 +269,13 @@ func saveHtml(a []string, outfile string, noBOM bool, useLF bool) {
 	}
 	// as I emit the HTML, look for predefined tokens that generate spans
 	// or other info.
-	// ☰ <style class='red'>
-	// ☱ <style class='green'>
-	// ☲ <style class='dim'>
-	// ☳ this token defines a comment in text and a literal line in HTML
-	// ☴
-	// ☵
-	// ☶
-	// ☷ </style>
+	// ☰ <span class='red'>
+	// ☱ <span class='green'>
+	// ☲ <span class='dim'>
+	// ☳ <span class='black'>
+	// ☷ </span>
+	// ◨ <i>
+	// ◧ </i>
 	for _, line := range a {
 		s := strings.Replace(line, "\n", "\r\n", -1)
 
@@ -267,8 +290,10 @@ func saveHtml(a []string, outfile string, noBOM bool, useLF bool) {
 		s = strings.Replace(s, "☱", "<span class='green'>", -1)
 		s = strings.Replace(s, "☲", "<span class='dim'>", -1)
 		s = strings.Replace(s, "☳", "<span class='black'>", -1)
+		s = strings.Replace(s, "◨", "<i>", -1)
+		s = strings.Replace(s, "◧", "</i>", -1)
 		s = strings.Replace(s, "☷", "</span>", -1)
-		s = strings.Replace(s, "☳", "", -1) // HTML-only flag
+		s = strings.Replace(s, "☳", "", -1) // HTML-only line flag
 
 		fmt.Fprintf(f2, "%s\r\n", s)
 	}
@@ -283,25 +308,6 @@ func saveHtml(a []string, outfile string, noBOM bool, useLF bool) {
 /* punctuation scan                                                       */
 /*                                                                        */
 /* ********************************************************************** */
-
-// return true if both straight and curly quotes detected
-
-func straightCurly(lpb []string) bool {
-	curly := false
-	straight := false
-	for _, line := range lpb {
-		if strings.ContainsAny(line, "\"'") {
-			straight = true
-		}
-		if strings.ContainsAny(line, "“”‘’") {
-			curly = true
-		}
-		if straight && curly {
-			break
-		}
-	}
-	return straight && curly
-}
 
 // evaluate the punctuation in one paragraph
 // if cquote is true, then next paragraph starts with an opening quote
@@ -377,9 +383,28 @@ func puncEval(p string, cquote bool) []string {
 func puncScan() []string {
 	
 	rs := []string{} // local rs to start aggregation
-	rs = append(rs, "☳********************************************************************************")
-	rs = append(rs, "* PUNCTUATION SCAN                                                             *")
-	rs = append(rs, "********************************************************************************")
+	rs = append(rs, "☳<a name='punct'></a>")
+
+	if p.Nosqc {
+		rs = append(rs, "☲" + strings.Repeat("*", 80))
+		rs = append(rs, fmt.Sprintf("* %-76s *", "SMART QUOTE CHECKS disabled"))
+		rs = append(rs, strings.Repeat("*", 80) + "☷")
+		rs = append(rs, "")
+		return rs
+	}
+	if puncStyle == "British" {
+		rs = append(rs, "☲" + strings.Repeat("*", 80))
+		rs = append(rs, fmt.Sprintf("* %-76s *", "SMART QUOTE CHECKS skipped (British-style)"))
+		rs = append(rs, strings.Repeat("*", 80) + "☷")
+		rs = append(rs, "")
+		return rs
+	}
+	
+	// here we can run a curly quote scan
+	// build the header
+	rs = append(rs, "☳" + strings.Repeat("*", 80))
+	rs = append(rs, fmt.Sprintf("* %-76s *", "SMART QUOTE CHECKS"))
+	rs = append(rs, strings.Repeat("*", 80))
 	rs = append(rs, "")
 
 	// get a copy of the paragraph buffer to edit in place
@@ -388,7 +413,7 @@ func puncScan() []string {
 
 	if straightCurly(lpb) {
 		// cannot proceed if mixed straight and curly quotes
-		rs = append(rs, "  ☰mixed straight and curly quotes.☷ curly quote scan not done☷")
+		rs = append(rs, "  ◨mixed straight and curly quotes.◧ smart quote analysis not done☷")
 		rs = append(rs, "")
 		return rs
 	}
@@ -425,10 +450,10 @@ func puncScan() []string {
 	}
 
 	if !haveReport {
-		rs = append(rs, "no punctuation scan reports")	
+		rs = append(rs, "no punctuation scan reports")
+		rs[1] = "☲" + string([]rune(rs[1])[1:])  // switch to dim
 	}
-	rs = append(rs, "☷")
-
+	rs = append(rs, "☷")  // and close out dim or black if reports
 	return rs
 }
 
@@ -459,30 +484,60 @@ func Intersection(a, b []string) (c []string) {
 
 func aspellCheck() ([]string, []string, []string) {
 
-	pptr = append(pptr, "☳<a name='spell'></a>")
+	rs := []string{} // empty rs to start aggregation
+	rs = append(rs, "☳<a name='spell'></a>")
 
-	okwords := make(map[string]int, len(wordListMapCount)) // copy of all words in the book, with freq
+	rs = append(rs, "☳" + strings.Repeat("*", 80))
+	rs = append(rs, fmt.Sprintf("* %-76s *", fmt.Sprintf("SPELLCHECK SUSPECT WORDS (%s)", p.Alang)))
+	rs = append(rs, strings.Repeat("*", 80))
+	rs = append(rs, "")
+
+
+	// previously, the wordListMapCount was populated with all words and how
+	// often they occured. That map is the starting point for a list of good
+	// words in the book. Start with all words, subtract suspects -> result
+	// are good words that will be used later, as in the Levenshtein distance
+	// checks of each suspect word against all good words.
+
+	okwords := make(map[string]int, len(wordListMapCount))
 	for k, v := range wordListMapCount {
 		okwords[k] = v
 	}
 
-	pptr = append(pptr, "☳<a name='spell'></a>")
-	rs := []string{} // empty rs to start aggregation
-	rs = append(rs, fmt.Sprintf("********************************************************************************"))
-	rs = append(rs, fmt.Sprintf("* %-76s *", fmt.Sprintf("SPELLCHECK SUSPECT WORDS (%s)", p.Alang)))
-	rs = append(rs, fmt.Sprintf("********************************************************************************"))
-	rs = append(rs, "")
+	// any words in the good word list need to be pulled out of the text *before* running
+	// aspell because aspell will split it. Example: avec-trollop will be flagged for "avec"
+	// this will replace the entire "avec-trollop" with "▷000000◁" which will not flag aspell.
 
+	lwbuf := make([]string, len(wbuf))
+	copy(lwbuf, wbuf)
+
+	for i, line := range lwbuf {
+		for n, word := range goodWordlist {
+			// use the index to generate a token
+			if strings.Contains(line, word) {
+				lwbuf[i] = strings.Replace(lwbuf[i], word, fmt.Sprintf("▷%06d◁", n), -1)
+			}
+		}
+	}
+
+	// any hyphenated words will be evaluated by parts. either part or both can flag a report.
+	//
+	// begin successive aspell runs for each language
+	
 	pid := os.Getpid()
 	fnpida := fmt.Sprintf("/tmp/%da.txt", pid)
 	fnpidb := fmt.Sprintf("/tmp/%db.txt", pid)
 
 	// make working copy
-	mycommand := fmt.Sprintf("cp %s %s", p.Infile, fnpida)
-	out, err := exec.Command("bash", "-c", mycommand).Output()
+	f2, err := os.Create(fnpida) // specified report file for text output
 	if err != nil {
 		log.Fatal(err)
 	}
+	// send out the good-word protected local working buffer
+	for _, line := range lwbuf {
+		fmt.Fprintf(f2, "%s\r", line)
+	}
+	f2.Close()
 
 	// process with each language specified by user
 	uselangs := strings.Split(p.Alang, ",")
@@ -497,22 +552,22 @@ func aspellCheck() ([]string, []string, []string) {
 		} 
 
 		// rs = append(rs, fmt.Sprintf("lang used: %s", rl))
-		mycommand = fmt.Sprintf("cat %s | aspell --encoding='utf-8' --lang=%s --list | sort | uniq > %s", fnpida, rl, fnpidb)
-		out, err = exec.Command("bash", "-c", mycommand).Output()
+		mycommand := fmt.Sprintf("cat %s | aspell --encoding='utf-8' --lang=%s --list | sort | uniq > %s", fnpida, rl, fnpidb)
+		_, err := exec.Command("bash", "-c", mycommand).Output()
 		if err != nil {
 			log.Fatal(err)
 		}	
 
 		mycommand = fmt.Sprintf("cp %s %s", fnpidb, fnpida)
-		out, err = exec.Command("bash", "-c", mycommand).Output()
+		_, err = exec.Command("bash", "-c", mycommand).Output()
 		if err != nil {
 			log.Fatal(err)
 		}	
 	}
 
 	// get resulting suspect word list
-	mycommand = fmt.Sprintf("cat %s", fnpida)	
-	out, err = exec.Command("bash", "-c", mycommand).Output()
+	mycommand := fmt.Sprintf("cat %s", fnpida)	
+	out, err := exec.Command("bash", "-c", mycommand).Output()
 		if err != nil {
 			log.Fatal(err)
 		}	
@@ -536,22 +591,28 @@ func aspellCheck() ([]string, []string, []string) {
 			i--
 			continue
 		}
-		if inGoodWordList(t) {
+		// danger: this could hide a " th " type by accepting "4th"
+		if t == "th" || t == "st" || t == "nd" {
 			suspect_words = append(suspect_words[:i], suspect_words[i+1:]...)
 			i--
-			continue			
+			continue		
 		}
 	}
 
+	// sort the list of suspect words for report order
+	sort.Slice(suspect_words, func(i, j int) bool {
+		return strings.ToLower(suspect_words[i]) < strings.ToLower(suspect_words[j])
+	})
+
 	// show each word in context
+
 	var sw []string                    // suspect words
 	lcreported := make(map[string]int) // map to hold downcased words reported
 
 	// rs = append(rs, fmt.Sprintf("Suspect words:"))
 	re4 := regexp.MustCompile(`☰`)
 	
-	for _, word := range suspect_words {
-
+	for _, word := range suspect_words {	
 		// if I've reported the word in any case, don't report it again
 		lcword := strings.ToLower(word)
 		if _, ok := lcreported[lcword]; ok { // if it is there already, skip
@@ -563,10 +624,10 @@ func aspellCheck() ([]string, []string, []string) {
 		sw = append(sw, word)                    // simple slice of only the word
 		rs = append(rs, fmt.Sprintf("%s", word)) // word we will show in context
 
-
 		re := regexp.MustCompile(`(^|\P{L})(` + word + `)(\P{L}|$)`)
 
 		// make sure there is an entry for this word in the line map
+
 		if _, ok := wordListMapLines[word]; ok {
 			theLines := strings.Split(wordListMapLines[word], ",")
 			reported := 0
@@ -590,8 +651,6 @@ func aspellCheck() ([]string, []string, []string) {
 			// sésame-ouvre-toi not found in map
 			// [2806 1507,1658,2533,2806 1333,1371,2806,3196,3697]
 			// find a number that's in all three (2806)
-			// if it has a hyphen...
-			// fmt.Printf("%s not found in map\n", word)
 			pcs := strings.Split(word,"-")
 			// find all lines with first word
 			
@@ -614,9 +673,11 @@ func aspellCheck() ([]string, []string, []string) {
 		rs = append(rs, "")
 	}
 
-	// remove all suspect words from okwords map
+	haveReport := false
+	// remove all suspect words from allwords map
 	for _, s := range sw {
 		delete(okwords, s)
+		haveReport = true
 	}
 
 	// convert to slice and return
@@ -625,12 +686,18 @@ func aspellCheck() ([]string, []string, []string) {
 		okslice = append(okslice, s)
 	}
 
+	if !haveReport {
+		rs = append(rs, "no spellcheck suspect words")
+		rs[1] = "☲" + string([]rune(rs[1])[1:])  // switch to dim
+	}
+	rs = append(rs, "☷")  // and close out dim or black if reports
+
 	return sw, okslice, rs
 }
 
 /* ********************************************************************** */
 /*                                                                        */
-/* from util.go                                                          */
+/* utilities                                                              */
 /*                                                                        */
 /* ********************************************************************** */
 
@@ -1027,15 +1094,16 @@ func tcDashCheck(pb []string) []string {
 	rs = append(rs, "----- dash check -------------------------------------------------------------")
 	rs = append(rs, "")
 
-	re := regexp.MustCompile(`(— )|( —)|(—-)|(-—)|(- -)|(— -)|(- —)`)
+	re := regexp.MustCompile(`(—)\s|\s(—)|(—-)|(-—)|(-\s+-)|(—\s+-)|(-\s+—)|(--)|[^—](———)[^—]`)
 	count := 0
 	for _, para := range pb {
-		if re.MatchString(para) {
-			u := re.FindStringIndex(para)
-			if u != nil {
+		t := re.FindAllStringIndex(para, -1)
+		if t != nil {  // one or more matches
+			for _, u := range t {
 				if p.Verbose || count < 5 {
 					s := getParaSegment(para, u[0])
-					rs = append(rs, fmt.Sprintf("   [%3s] %s", para[u[0]:u[1]], s))
+					s2 := fmt.Sprintf("[%s]", para[u[0]:u[1]])
+					rs = append(rs, fmt.Sprintf("   %10s %s", s2, s))
 				}
 				count++
 			}
@@ -1083,12 +1151,14 @@ func tcEllipsisCheck(wb []string) []string {
 	// found in the wild
 	re7 := regexp.MustCompile(`\.\s\.+`) // but the cars. ...
 
+	re8 := regexp.MustCompile(`(^|[^\.])\.\.($|[^\.])`) // was becoming διαστειχων..
+
 	count := 0
 	for n, line := range wb {
 		if re1.MatchString(line) || re2.MatchString(line) ||
 			re3.MatchString(line) || re4.MatchString(line) ||
 			re5.MatchString(line) || re6.MatchString(line) ||
-			re7.MatchString(line) {
+			re7.MatchString(line) || re8.MatchString(line) {
 			rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, line))  // 1=based
 			count++
 		}
@@ -1386,7 +1456,8 @@ func tcLetterChecks(wb []string) []string {
 			// rs = append(rs, fmt.Sprintf("%s", kv.Key))
 			count += 1
 			for n, line := range wb {
-				if strings.ContainsRune(line, kv.Key) {
+				// make exception for "&c"
+				if strings.ContainsRune(line, kv.Key) && !strings.Contains(line, "&c") {
 					if p.Verbose || reportcount < 2 {
 						line = strings.Replace(line, string(kv.Key), "☰"+string(kv.Key)+"☷", -1)
 						rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, line))  // 1=based
@@ -1475,78 +1546,108 @@ func tcBookLevel(wb []string) []string {
 
 	// check: straight and curly quotes mixed
 	if m['\''] > 0 && (m['‘'] > 0 || m['’'] > 0) {
-		rs = append(rs, "  both straight and curly single quotes found in text")
+		rs = append(rs, "  both straight and curly ◨single◧ quotes found in text")
 		count++
 	}
 
 	if m['"'] > 0 && (m['“'] > 0 || m['”'] > 0) {
-		rs = append(rs, "  both straight and curly double quotes found in text")
+		rs = append(rs, "  both straight and curly ◨double◧ quotes found in text")
 		count++
 	}
 
-	// check to-day and today mixed
-	ctoday, ctohday, ctonight, ctohnight := 0, 0, 0, 0
+	// ----- check to-day and today mixed -----
+
+	ctoday, ctohday, ctonight, ctohnight, ctomorrow, ctohmorrow := 0, 0, 0, 0, 0, 0
 	re01 := regexp.MustCompile(`(?i)today`)
 	re02 := regexp.MustCompile(`(?i)to-day`)
 	re03 := regexp.MustCompile(`(?i)tonight`)
 	re04 := regexp.MustCompile(`(?i)to-night`)
+	re05 := regexp.MustCompile(`(?i)tomorrow`)
+	re06 := regexp.MustCompile(`(?i)to-morrow`)
 	for _, line := range wb {
 		ctoday += len(re01.FindAllString(line, -1))
 		ctohday += len(re02.FindAllString(line, -1))
 		ctonight += len(re03.FindAllString(line, -1))
 		ctohnight += len(re04.FindAllString(line, -1))
+		ctomorrow += len(re05.FindAllString(line, -1))
+		ctohmorrow += len(re06.FindAllString(line, -1))		
+	}
+
+	if (ctoday > 0 && ctohday > 0) || (ctonight > 0 && ctohnight > 0) || (ctomorrow > 0 && ctohmorrow > 0) {
+		rs = append(rs, "")
 	}
 	if ctoday > 0 && ctohday > 0 {
-		rs = append(rs, "  both \"today\" and \"to-day\" found in text")
+		rs = append(rs, "  ☱both \"today\" and \"to-day\" found in text☷")
 		count++
 	}
 	if ctonight > 0 && ctohnight > 0 {
-		rs = append(rs, "  both \"tonight\" and \"to-night\" found in text")
+		rs = append(rs, "  ☱both \"tonight\" and \"to-night\" found in text☷")
 		count++
+	}
+	if ctomorrow > 0 && ctohmorrow > 0 {
+		rs = append(rs, "  ☱both \"tomorrow\" and \"to-morrow\" found in text☷")
+		count++
+	}
+	if p.Verbose {
+		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "today", ctoday, "tonight", ctonight,
+			"tomorrow", ctomorrow))
+		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "to-day", ctohday, "to-night", ctohnight,
+			"to-morrow", ctohmorrow))
+		rs = append(rs, "")
 	}
 
-	// check: American and British title punctuation mixed
-	mrpc, mrc, mrspc, mrsc, drpc, drc := false, false, false, false, false, false
-	re1 := regexp.MustCompile(`Mr\.`)
-	re2 := regexp.MustCompile(`Mr\s`)
-	re3 := regexp.MustCompile(`Mrs\.`)
-	re4 := regexp.MustCompile(`Mrs\s`)
-	re5 := regexp.MustCompile(`Dr\.`)
-	re6 := regexp.MustCompile(`Dr\s`)
-	for _, para := range wb {
-		if !mrpc {
-			mrpc = re1.MatchString(para)
-		}
-		if !mrc {
-			mrc = re2.MatchString(para)
-		}
-		if !mrspc {
-			mrspc = re3.MatchString(para)
-		}
-		if !mrsc {
-			mrsc = re4.MatchString(para)
-		}
-		if !drpc {
-			drpc = re5.MatchString(para)
-		}
-		if !drc {
-			drc = re6.MatchString(para)
-		}
-	}
-	if mrpc && mrc {
-		rs = append(rs, "  both \"Mr.\" and \"Mr\" found in text")
-		count++
-	}
-	if mrspc && mrsc {
-		rs = append(rs, "  both \"Mrs.\" and \"Mrs\" found in text")
-		count++
-	}
-	if drpc && drc {
-		rs = append(rs, "  both \"Dr.\" and \"Dr\" found in text")
-		count++
+	// ----- check American and British title punctuation mixed -----
+
+	re01 = regexp.MustCompile(`Mr\.`)
+	re02 = regexp.MustCompile(`Mr\s`)
+	re03 = regexp.MustCompile(`Mrs\.`)
+	re04 = regexp.MustCompile(`Mrs\s`)
+	re05 = regexp.MustCompile(`Dr\.`)
+	re06 = regexp.MustCompile(`Dr\s`)
+
+	count_mr_period, count_mr_space, count_mrs_period, count_mrs_space, count_dr_period, count_dr_space := 0,0,0,0,0,0
+	for _, line := range wb {
+		count_mr_period += len(re01.FindAllString(line, -1))
+		count_mr_space += len(re02.FindAllString(line, -1))
+		count_mrs_period += len(re03.FindAllString(line, -1))
+		count_mrs_space += len(re04.FindAllString(line, -1))
+		count_dr_period += len(re05.FindAllString(line, -1))
+		count_dr_space += len(re06.FindAllString(line, -1))
 	}
 
-	// apostrophes and turned commas
+	mabreported := false
+	if count_mr_period > 0 && count_mr_space > 0 {
+		rs = append(rs, "  ☱both \"Mr.\" and \"Mr\" found in text☷")
+		count++
+		mabreported = true
+	}
+	if count_mrs_period > 0 && count_mrs_space > 0 {
+		rs = append(rs, "  ☱both \"Mrs.\" and \"Mrs\" found in text☷")
+		count++
+		mabreported = true
+	}
+	if count_dr_period > 0 && count_dr_space > 0 {
+		rs = append(rs, "  ☱both \"Dr.\" and \"Dr\" found in text☷")
+		count++
+		mabreported = true
+	}
+	// if mixed and not already reported
+	showmaball := false
+	if !mabreported && (count_mr_period + count_mrs_period + count_dr_period > 0) && 
+	                   (count_mr_space + count_mrs_space + count_dr_space > 0) {
+		rs = append(rs, "  ☱mixed American and British title punctuation☷")
+		count++
+		showmaball = true
+	}
+
+	if p.Verbose || showmaball {
+		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "Mr", count_mr_period, "Mrs", count_mrs_period,
+			"Dr", count_dr_period))
+		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "Mr.", count_mr_space, "Mrs.", count_mrs_space,
+			"Dr.", count_dr_space))
+	}
+
+	// ----- apostrophes and turned commas -----
 	countm1, countm2 := 0, 0
 	for n, _ := range wb {
 		// check each word separately on this line
@@ -1777,28 +1878,6 @@ func tcParaLevel() []string {
 	}
 
 	// ------------------------------------------------------------------------
-	// check: unconverted double-dash/em-dash, long dash error,
-	//        or double-emdash broken at end of line
-	re = regexp.MustCompile(`(\p{L}--\p{L})|(\p{L}--)|(\p{L}— —)|(\p{L}- -)|(--\p{L})|(—— )|(— )|( —)|(———)`)
-	sscnt = 0
-	for _, para := range pbuf {
-		loc := re.FindStringIndex(para)
-		if loc != nil {
-			if sscnt == 0 {
-				rs = append(rs, "  dash error")
-				count++
-			}
-			sscnt++
-			if sscnt < RLIMIT || p.Verbose {
-				rs = append(rs, "    "+getParaSegment(para, loc[0]))
-			}
-		}
-	}
-	if sscnt > RLIMIT && !p.Verbose {
-		rs = append(rs, fmt.Sprintf("    ...%d more", sscnt-RLIMIT))
-	}
-
-	// ------------------------------------------------------------------------
 	// check: common he/be, hut/but and had/bad checks
 	//        jeebies is run separately with different algorithm (three word forms)
 
@@ -1871,9 +1950,11 @@ func tcParaLevel() []string {
 	// ------------------------------------------------------------------------
 	// check: paragraph endings, punctuation-style aware
 
+	// include thought-break line all '-'
+	// include ending with a footnote reference
 	const (
-		LEGALAMERICAN = `\.$|:$|\?$|!$|—$|.”|\?”$|’”$|!”$|—”|-----` // include thought-break line all '-'
-		LEGALBRITISH  = `\.$|:$|\?$|!$|—$|.’|\?’$|”’$|!’$|—’|-----`
+		LEGALAMERICAN = `\.$|:$|\?$|!$|—$|.["”]|\?["”]$|['’]["”]$|!["”]$|—["”]|-----|\[\d+\]$` 
+		LEGALBRITISH  = `\.$|:$|\?$|!$|—$|.['’]|\?['’]$|["”]['’]$|!['’]$|—['’]|-----|\[\d+\]$`
 	)
 
 	re_end := regexp.MustCompile(LEGALAMERICAN)
@@ -1951,15 +2032,21 @@ func tcGutChecks(wb []string) []string {
 	re0016 := regexp.MustCompile(`<\/?.*?>`)         // HTML tag
 	// re0017 := regexp.MustCompile(`([^\.]\.\.\. )|(\.\.\.\.[^\s])|([^\.]\.\.[^\.])|(\.\.\.\.\.+)`)       // ellipsis
 	re0018 := regexp.MustCompile(`([\.,;!?’‘]+[‘“])|([A-Za-z]+[“])|([A-LN-Za-z]+[‘])|(“ )|( ”)|(‘s\s)`) // quote direction (context)
-	re0019 := regexp.MustCompile(`\b0\b`)                                                               // standalone 0
-	re0020a := regexp.MustCompile(`\b1\b`)                                                              // standalone 1
-	re0020b := regexp.MustCompile(`\$1\b`)                                                              // standalone 1 allowed after dollar sign
-	re0020c := regexp.MustCompile(`1,`)                                                                 // standalone 1 allowed before comma
-	re0021 := regexp.MustCompile(`([A-Za-z]\d)|(\d[A-Za-z])`)                                           // mixed alpha and numerals
-	re0022 := regexp.MustCompile(`\s$`)                                                                 // trailing spaces/whitespace on line
-	re0023 := regexp.MustCompile(`&c([^\.]|$)`)                                                         // abbreviation &c without period
-	re0024 := regexp.MustCompile(`^[!;:,.?]`)                                                           // line starts with (selected) punctuation
-	re0025 := regexp.MustCompile(`^-[^-]`)                                                              // line starts with hyphen followed by non-hyphen
+	re0019 := regexp.MustCompile(`\b0\b`)      // standalone 0
+	
+	re0020a := regexp.MustCompile(`(^|\P{Nd})1($|\P{Nd})`)      // standalone 1
+	// exceptions
+	re0020b := regexp.MustCompile(`\$1\b`)  // standalone 1 allowed after dollar sign
+	re0020c := regexp.MustCompile(`1,`)  // standalone 1 allowed before comma
+	re0020d := regexp.MustCompile(`1(-|‑|‒|–|—|―)\p{Nd}`)  // standalone 1 allowed before dash+num
+	re0020e := regexp.MustCompile(`\p{Nd}(-|‑|‒|–|—|―)1`)  // standalone 1 allowed after num+dash
+	re0020f := regexp.MustCompile(`(^|\P{Nd})1\.`)   // standalone 1 allowed as "1." (a numbered list)
+	re0020g := regexp.MustCompile(`1st`)   // standalone 1 allowed as "1st"
+	
+	re0022 := regexp.MustCompile(`\s$`)         // trailing spaces/whitespace on line
+	re0023 := regexp.MustCompile(`&c([^\.]|$)`) // abbreviation &c without period
+	re0024 := regexp.MustCompile(`^[!;:,.?]`)   // line starts with (selected) punctuation
+	re0025 := regexp.MustCompile(`^-[^-]`)      // line starts with hyphen followed by non-hyphen
 
 	re0026 := regexp.MustCompile(`\.+[’”]*\p{L}`) //
 
@@ -1995,10 +2082,29 @@ func tcGutChecks(wb []string) []string {
 	re_period := regexp.MustCompile(NOPERIODPATTERN)
 	abandonedTagCount := 0 // courtesy limit if user uploads fpgen source, etc.
 
+
+	re0021 := regexp.MustCompile(`(\p{L}\p{Nd})|(\p{Nd}\p{L})`)    // mixed alpha and numerals
+	re0021a := regexp.MustCompile(`(^|\P{L})\p{Nd}*[02-9]?1st(\P{L}|$)`)
+	re0021b := regexp.MustCompile(`(^|\P{L})\p{Nd}*[02-9]?2nd(\P{L}|$)`)
+	re0021c := regexp.MustCompile(`(^|\P{L})\p{Nd}*[02-9]?3rd(\P{L}|$)`)
+	re0021d := regexp.MustCompile(`(^|\P{L})\p{Nd}*[4567890]th(\P{L}|$)`)
+	re0021e := regexp.MustCompile(`(^|\P{L})\p{Nd}*1\p{Nd}th(\P{L}|$)`)
+	re0021f := regexp.MustCompile(`(^|\P{L})\p{Nd}*[23]d(\P{L}|$)`)
+
 	for n, line := range wb {
 
+		if re0021.MatchString(line) && 
+		   !re0021a.MatchString(line) &&
+		   !re0021b.MatchString(line) &&
+		   !re0021c.MatchString(line) &&
+		   !re0021d.MatchString(line) &&
+		   !re0021e.MatchString(line) &&
+		   !re0021f.MatchString(line) {
+			gcreports = append(gcreports, reportln{"mixed letters and numbers in word", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+		}
+
 		if re0026.MatchString(line) {
-			gcreports = append(gcreports, reportln{"sentence spacing", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"full stop followed by letter", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
 		}
 
 		if re0000.MatchString(line) {
@@ -2092,11 +2198,14 @@ func tcGutChecks(wb []string) []string {
 		if re0019.MatchString(line) {
 			gcreports = append(gcreports, reportln{"standalone 0", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
 		}
-		if re0020a.MatchString(line) && !re0020b.MatchString(line) && !re0020c.MatchString(line) {
+		if re0020a.MatchString(line) && 
+			!re0020b.MatchString(line) && 
+			!re0020c.MatchString(line) && 
+			!re0020d.MatchString(line) && 
+			!re0020e.MatchString(line) && 
+			!re0020f.MatchString(line) && 
+			!re0020g.MatchString(line) {
 			gcreports = append(gcreports, reportln{"standalone 1", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
-		}
-		if re0021.MatchString(line) {
-			gcreports = append(gcreports, reportln{"mixed letters and numbers in word", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
 		}
 		if re0022.MatchString(line) {
 			gcreports = append(gcreports, reportln{"trailing space on line", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
@@ -2233,6 +2342,8 @@ okabbrev = ("cent", "cents", "viz", "vol", "vols", "vid", "ed", "al", "etc",
 	input: a slice of strings that is the book
     output: a map of words and frequency of occurence of each word
     	    a map of words and the line numbers where they appeared
+    apostrophes (' and ’) protected
+    hyphenated words are split and each part is treated separately (matching aspell)
 */
 
 func getWordList(wb []string) (map[string]int, map[string]string) {
@@ -2242,23 +2353,23 @@ func getWordList(wb []string) (map[string]int, map[string]string) {
 	m := make(map[string]int) // map to hold words, counts
 	ml := make(map[string]string) // map to hold words, lines
 
-	// preserve internal hyphenation
-	///var re1 = regexp.MustCompile(`(\p{L})-(\p{L})`) // letter-letter
-	// preserve single quotes within words
+	// preserve apostrophes
+	var re1 = regexp.MustCompile(`(\p{L})'(\p{L})`) // letter'letter
 	var re2 = regexp.MustCompile(`(\p{L})’(\p{L})`) // letter’letter
 	for n, element := range wb {
-		// need this twice to handle alternates i.e. fo’c’s’le
-		///element = re1.ReplaceAllString(element, `${1}①${2}`)
-		///element = re1.ReplaceAllString(element, `${1}①${2}`)
+		// need this twice to handle alternates i.e. fo’c’s’le or sésame-ouvre-toi
+		element = re1.ReplaceAllString(element, `${1}①${2}`)
+		element = re1.ReplaceAllString(element, `${1}①${2}`)
 		element = re2.ReplaceAllString(element, `${1}②${2}`)
 		element = re2.ReplaceAllString(element, `${1}②${2}`)
 		// all words with special characters are protected
+		// split into words
 		t := (strings.FieldsFunc(element, f))
 
 		for _, word := range t {
 			// put the special characters back in there
-			s := strings.Replace(word, "②", "’", -1)
-			s = strings.Replace(s, "①", "-", -1)
+			s := strings.Replace(word, "①", "'", -1)
+			s = strings.Replace(s, "②", "’", -1)
 			// and build the frequency map
 			if _, ok := m[s]; ok { // if it is there already, increment
 				m[s] = m[s] + 1
@@ -2311,9 +2422,11 @@ func getWordsOnLine(s string) []string {
 
 /* ********************************************************************** */
 /*                                                                        */
-/* from leven.go                                                          */
+/* Levenshtein distance checks                                            */
 /*                                                                        */
 /* ********************************************************************** */
+
+// calculate and return edit distance
 
 func levenshtein(str1, str2 []rune) int {
 	s1len := len(str1)
@@ -2389,12 +2502,25 @@ func showWordInContext(word string) []string {
 
 // iterate over every suspect word at least six runes long
 // case insensitive
-// looking for a good word in the text that is "near"
-func levencheck(okwords []string, suspects []string) []string {
-	rs := []string{} // new empty array of strings for local aggregation
-	rs = append(rs, fmt.Sprintf("********************************************************************************"))
+// looking for a any word in the text that is "near"
+func levencheck(suspects []string) []string {
+
+	rs := []string{} // local rs to start aggregation
+	rs = append(rs, "☳<a name='leven'></a>")
+
+	if p.Nolev {
+		rs = append(rs, "☲" + strings.Repeat("*", 80))
+		rs = append(rs, fmt.Sprintf("* %-76s *", "LEVENSHTEIN (EDIT DISTANCE) CHECKS disabled"))
+		rs = append(rs, strings.Repeat("*", 80) + "☷")
+		rs = append(rs, "")
+		return rs
+	}
+
+	// here we can run a distance check
+	// build the header
+	rs = append(rs, "☳" + strings.Repeat("*", 80))
 	rs = append(rs, fmt.Sprintf("* %-76s *", "LEVENSHTEIN (EDIT DISTANCE) CHECKS"))
-	rs = append(rs, fmt.Sprintf("********************************************************************************"))
+	rs = append(rs, strings.Repeat("*", 80))
 	rs = append(rs, "")
 
 	// wordsonline is a slice. each "line" contains a map of words on that line
@@ -2418,83 +2544,96 @@ func levencheck(okwords []string, suspects []string) []string {
 	}
 
 	nreports := 0
-	// for each suspect word, check against all ok words.
+
+	// build a map to show all words that have been reported
+	var reportd map[string]int
+	reportd = make(map[string]int)
+
+	// for each suspect word, check against all words.
 	for _, suspect := range suspects {
-		suspect_reported := false
 		suspectlc := strings.ToLower(suspect)
 
-		for _, okword := range okwords {
+		for testword, _ := range wordListMapCount {
+			testwordlc := strings.ToLower(testword)
 
-			okwordlc := strings.ToLower(okword)
-
-			if suspect_reported { // stop looking if suspect already reported
-				break
+			// have both been already reported
+			r1st, r2nd := false, false
+			if _, ok := reportd[testwordlc]; ok {
+				r1st = true
 			}
-
-			// must be five letters or more
-			if utf8.RuneCountInString(suspect) < 5 {
+			if _, ok := reportd[suspectlc]; ok {
+				r2nd = true
+			}
+			if r1st && r2nd {
 				continue
 			}
 
-			// only differ by capitalization
-			if suspectlc == okwordlc {
+			// must be five letters or more
+			if utf8.RuneCountInString(suspectlc) < 5 {
+				continue
+			}
+
+			// only differ by capitalization or are the same word
+			if suspectlc == testwordlc {
 				continue
 			}
 
 			// differ only by apparent plural
-			if suspectlc == okwordlc+"s" || suspectlc+"s" == okwordlc {
+			if suspectlc == testwordlc+"s" || suspectlc+"s" == testwordlc {
 				continue
 			}
 
-			// calculate distance
-			// dist := levenshtein([]rune(suspect), []rune(okword))  // case sensistive
-			dist := levenshtein([]rune(suspectlc), []rune(okwordlc))
+			// calculate distance (case insensitive)
+			dist := levenshtein([]rune(suspectlc), []rune(testwordlc))
 
 			if dist < 2 {
 
 				countsuspect := wordListMapCount[suspect]
-				countokword := wordListMapCount[okword]
+				counttestword := wordListMapCount[testword]
 
-				if countokword == 0 || countsuspect == 0 { break }
+				if counttestword == 0 || countsuspect == 0 { break }
 
 				rs = append(rs, fmt.Sprintf("%s(%d):%s(%d)", suspectlc, countsuspect,
-					okwordlc, countokword))
+					testwordlc, counttestword))
 				nreports++
 
-				rs = append(rs,  showWordInContext(okword)...)
+				rs = append(rs,  showWordInContext(testword)...)
 				rs = append(rs,  showWordInContext(suspect)...)
 
 				rs = append(rs, "")
-				suspect_reported = true // report it once
+				reportd[testwordlc]  = 1
+				reportd[suspectlc]  = 1
 			}
+
 		}
 	}
+
 	if nreports == 0 {
-		rs = append(rs, "  no Levenshtein edit distance queries reported")
-		rs[0] = "☲" + rs[0] // style dim
-	} else {
-		rs[0] = "☳" + rs[0] // style black
+		rs = append(rs, "no Levenshtein edit distance queries reported")
+		rs[1] = "☲" + string([]rune(rs[1])[1:])  // switch to dim
 	}
-	rs = append(rs, "")
-	rs[len(rs)-1] += "☷" // close style
+	rs = append(rs, "☷")  // and close out dim or black if reports
 	return rs
 }
 
 /* ********************************************************************** */
 /*                                                                        */
-/* from jeebies.go                                                        */
+/* jeebies: he/be substitution checks                                     */
 /*                                                                        */
 /* ********************************************************************** */
 
-var wbs []string
-var wbl []string
+var wbs []string  // paragraphs as single line, case preserved
+var wbl []string  // paragraphs as single line, all lower case
 
 func jeebies() []string {
-	pptr = append(pptr, "☳<a name='jeebi'></a>")
-	rs := []string{} // new empty array of strings for local aggregation
-	rs = append(rs, fmt.Sprintf("********************************************************************************"))
+
+
+	rs := []string{} // empty rs to start aggregation
+	rs = append(rs, "☳<a name='jeebi'></a>")
+
+	rs = append(rs, "☳" + strings.Repeat("*", 80))
 	rs = append(rs, fmt.Sprintf("* %-76s *", "JEEBIES REPORT"))
-	rs = append(rs, fmt.Sprintf("********************************************************************************"))
+	rs = append(rs, strings.Repeat("*", 80))
 	rs = append(rs, "")
 
 	wbuf = append(wbuf, "") // ensure last paragraph converts
@@ -2747,44 +2886,17 @@ func jeebies() []string {
 			}
 		}
 	*/
+
 	if nreports == 0 {
-		rs = append(rs, "  no jeebies checks reported.")
-		rs[0] = "☲" + rs[0] // style dim
-	} else {
-		rs[0] = "☳" + rs[0] // style black
+		rs = append(rs, "no jeebies checks reported")
+		rs[1] = "☲" + string([]rune(rs[1])[1:])  // switch to dim
 	}
-	rs = append(rs, "")
-	rs[len(rs)-1] += "☷" // close style
+	rs = append(rs, "☷")  // and close out dim or black if reports
 	return rs
 }
 
-/* ********************************************************************** */
-/*                                                                        */
-/* from dict.go                                                           */
-/*                                                                        */
-/* ********************************************************************** */
-
-// dictionary word list
-func readDict(infile string) []string {
-	file, err := os.Open(infile)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
-	wd := []string{}
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		wd = append(wd, scanner.Text())
-	}
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
-	}
-
-	// remove BOM if present
-	wd[0] = strings.TrimPrefix(wd[0], BOM)
-	return wd
-}
-
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * 
+//
 // scanno word list in in scannos.txt file
 
 func readScannos(infile string) []string {
@@ -2806,11 +2918,15 @@ func readScannos(infile string) []string {
 	return swl
 }
 
-// he word list and be word list in in patterns.txt bracketed by
-// *** BEGIN HE *** and *** END HE ***
-func readHeBe(infile string) {
-	heMap = make(map[string]int)
-	beMap = make(map[string]int)
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * 
+//
+// he word list and be word list in in patterns.txt
+// bracketed by *** BEGIN HE *** and *** END HE ***
+// hebelist.txt is all lower case; contains many ’ apostrophes
+
+func readHeBe(infile string) (map[string]int, map[string]int) {
+	hmp := make(map[string]int)
+	bmp := make(map[string]int)
 
 	file, err := os.Open(infile)
 	if err != nil {
@@ -2842,18 +2958,19 @@ func readHeBe(infile string) {
 			t := strings.Split(scanner.Text(), ":")
 			ttmp := strings.Replace(t[0], "|", " ", -1)
 			n, _ := strconv.Atoi(t[1])
-			heMap[ttmp] = n
+			hmp[ttmp] = n
 		}
 		if scanbe {
 			t := strings.Split(scanner.Text(), ":")
 			ttmp := strings.Replace(t[0], "|", " ", -1)
 			n, _ := strconv.Atoi(t[1])
-			beMap[ttmp] = n
+			bmp[ttmp] = n
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
+	return hmp, bmp
 }
 
 // read in the chosen word list (good word list)
@@ -2894,31 +3011,27 @@ func doparams() params {
 	flag.BoolVar(&p.Debug, "x", false, "debug (developer use)")
 	flag.BoolVar(&p.Nolev, "d", false, "do not run Levenshtein distance tests")
 	flag.BoolVar(&p.Nosqc, "q", false, "do not run smart quote checks")
-	flag.BoolVar(&p.NoBOM, "noBOM", false, "no BOM on text report")
-	flag.BoolVar(&p.UseLF, "useLF", false, "LF line endings on report")
 	flag.BoolVar(&p.Verbose, "v", false, "Verbose: show all reports")
 	flag.Parse()
 	return p
 }
 
+/*
+  start of main program
+*/
 var runStartTime time.Time
+
 func main() {
 	loc, _ := time.LoadLocation("America/Denver")
 	runStartTime = time.Now()
-	pptr = append(pptr, fmt.Sprintf("********************************************************************************"))
+	pptr = append(pptr, strings.Repeat("*", 80))
 	pptr = append(pptr, fmt.Sprintf("* %-76s *", "PPTEXT RUN REPORT"))
 	pptr = append(pptr, fmt.Sprintf("* %76s *", "started "+time.Now().In(loc).Format(time.RFC850)))
-	pptr = append(pptr, fmt.Sprintf("********************************************************************************"))
+	pptr = append(pptr, strings.Repeat("*", 80))
 	pptr = append(pptr, fmt.Sprintf("☲pptext version: %s", VERSION))
 
 	p = doparams() // parse command line parameters
-
-	/*************************************************************************/
-	/* working buffer                                                        */
-	/* user-supplied source file UTF-8 encoded                               */
-	/*************************************************************************/
-
-	wbuf = readText(p.Infile) // working buffer, line by line
+	wbuf = readText(p.Infile) // working buffer from user source file, line by line
 
 	// location of executable and user's working directory
 	execut, _ := os.Executable()
@@ -2936,27 +3049,25 @@ func main() {
 	}
 
 	// report status of verbose flag.
+	onoff := "off"
 	if p.Verbose {
-		pptr = append(pptr, fmt.Sprintf("verbose mode: %s", "on"))
-	} else {
-		pptr = append(pptr, fmt.Sprintf("verbose mode: %s", "off"))
+		onoff = "on"
 	}
+	pptr = append(pptr, fmt.Sprintf("verbose mode: %s", onoff))
 
+	// load scannos from data file
 	scannoWordlist = readScannos(filepath.Join(loc_exec, "scannos.txt"))
 
-	readHeBe(filepath.Join(loc_exec, "hebelist.txt"))
+	// load he/be entries
+	heMap, beMap = readHeBe(filepath.Join(loc_exec, "hebelist.txt"))
 
-	// now the good word list into gw []string
+	// load good word list
 	if len(p.GWFilename) > 0 { // a good word list was specified
 		if _, err := os.Stat(p.GWFilename); !os.IsNotExist(err) { // it exists
 			_, file := filepath.Split(p.GWFilename)
 			pptr = append(pptr, fmt.Sprintf("good words file: %s", file))
 			goodWordlist = readWordList(p.GWFilename)
 			pptr = append(pptr, fmt.Sprintf("good word count: %d words", len(goodWordlist)))
-			for i, w := range goodWordlist {
-				goodWordlist[i] = strings.Replace(w, "'", "’", -1)
-			}
-			gw = append(gw, goodWordlist...) // add good_words into dictionary
 		} else { // it does not exist
 			pptr = append(pptr, fmt.Sprintf("no %s found", p.GWFilename))
 		}
@@ -2964,27 +3075,19 @@ func main() {
 		pptr = append(pptr, "no good words file specified")
 	}
 
-	/*************************************************************************/
-	/* line word list                                                        */
-	/* slice of words on each line of text file (capitalization retained)    */
-	/*************************************************************************/
-
+	// line word list: slice of words on each line of text file (capitalization retained)
+	
 	for _, line := range wbuf {
 		lwl = append(lwl, getWordsOnLine(line))
 	}
 
-	/*************************************************************************/
-	/* word list map to frequency of occurrence                              */
-	/* capitalization retained; hyphens, apostrophes protected               */
-	/*************************************************************************/
-
+	// word list map to frequency of occurrence and word list map to lines where it occurs
+	// capitalization retained; apostrophes protected
+	
 	wordListMapCount, wordListMapLines = getWordList(wbuf)
 	
-	/*************************************************************************/
-	/* paragraph buffer (pb)                                                 */
-	/* the user source file one paragraph per line                           */
-	/*************************************************************************/
-
+	// paragraph buffer.  the user source file one paragraph per line
+	
 	var cp string // current (in progress) paragraph
 	for _, element := range wbuf {
 		// if this is a blank line and there is a paragraph in progress, save it
@@ -3009,65 +3112,57 @@ func main() {
 	}
 	pptr = append(pptr, fmt.Sprintf("paragraphs: %d", len(pbuf)))
 
+	// check and report punctuation style
+
 	puncStyle = getPuncStyle()
-	pptr = append(pptr, fmt.Sprintf("punctuation style: %s☷", puncStyle))
+	pptr = append(pptr, fmt.Sprintf("punctuation style: %s☷", puncStyle))  // close header info
 	pptr = append(pptr, "")
 
-	pptr = append(pptr, "☳reports: <a href='#punct'>punctuation scan</a> | <a href='#spell'>spellcheck</a> | <a href='#leven'>edit distance</a> | <a href='#texta'>text analysis</a> | <a href='#jeebi'>jeebies</a>")
+	pptr = append(pptr, "☳reports: <a href='#punct'>punctuation scan</a> | <a href='#spell'>spellcheck</a> | <a href='#leven'>edit distance</a> | <a href='#texta'>text analysis</a> | <a href='#jeebi'>jeebies</a>☷")
+
+	// prettyPrint(scannoWordlist)
+	// prettyPrint(goodWordlist)
+	// *** prettyPrint(okwords)  // only available after spellcheck
+	// prettyPrint(lwl)
+	// prettyPrint(wordListMapCount)
+	// prettyPrint(wordListMapLines)
+	// prettyPrint(goodWordlist)
 
 	/*************************************************************************/
-	/* begin individual tests                                                */
+	/* smart quote checks                                                    */
 	/*************************************************************************/
 
-	// smart quote check
-	pptr = append(pptr, "☳<a name='punct'></a>")
-
-	if p.Nosqc || puncStyle == "British" {
-		pptr = append(pptr, "☲********************************************************************************")
-		pptr = append(pptr, "* PUNCTUATION SCAN                                                             *")
-		pptr = append(pptr, "********************************************************************************")
-		pptr = append(pptr, "")
-		if p.Nosqc {
-			pptr = append(pptr, "Curly-quote scan checks skipped☷")
-		} else {
-			pptr = append(pptr, "Curly-quote scan checks skipped (British-style quotes)☷")
-		}
-	} else {
-		// t1 := time.Now()
-		t := puncScan()
-		// t2 := time.Now()
-		pptr = append(pptr, t...)
-		// pptr = append(pptr, fmt.Sprintf("smart quote check took: %.2f seconds", t2.Sub(t1).Seconds()))
-	}
-
-	// aspellCheck
-	sw, okwords, rsx := aspellCheck()
-	pptr = append(pptr, rsx...)
-
-	// levenshtein check
-	// compares all suspect words to all okwords in text
-	pptr = append(pptr, "☳<a name='leven'></a>")
-	if p.Nolev {
-		pptr = append(pptr, "")
-		pptr = append(pptr, "********************************************************************************")
-		pptr = append(pptr, "* LEVENSHTEIN (EDIT DISTANCE) CHECKS                                           *")
-		pptr = append(pptr, "********************************************************************************")
-		pptr = append(pptr, "")
-		pptr = append(pptr, "Levenshtein (edit-distance) checks skipped")
-	} else {
-		// t1 := time.Now()
-		t := levencheck(okwords, sw)
-		pptr = append(pptr, t...)
-		// t2 := time.Now()
-		// pptr = append(pptr, fmt.Sprintf("Levenshtein (edit-distance) checks took %.2f seconds", t2.Sub(t1).Seconds()))
-	}
-
-	// text check
-	//
-	t := textCheck()
+	t := puncScan()
 	pptr = append(pptr, t...)
 
-	// jeebies looks for he/be errors
+	/*************************************************************************/
+	/* spellcheck (using aspell)                                             */
+	/* returns suspect words, okwords, report                                */
+	/*************************************************************************/
+
+	sw, okwords, t = aspellCheck()
+	pptr = append(pptr, t...)
+
+	/*************************************************************************/
+	/* Levenshtein check                                                     */
+	/* compares all suspect words to all okwords in text                     */
+	/*************************************************************************/
+
+	t = levencheck(sw)
+	pptr = append(pptr, t...)
+
+	/*************************************************************************/
+	/* individual text checks                                                */
+	/*************************************************************************/
+	
+	t = textCheck()
+	pptr = append(pptr, t...)
+
+	/*************************************************************************/
+	/* Jeebies check                                                         */
+	/* jeebies looks for he/be errors                                        */
+	/*************************************************************************/
+
 	t = jeebies()
 	pptr = append(pptr, t...)
 
@@ -3078,12 +3173,11 @@ func main() {
 	/* all tests complete. save results to specified report file             */
 	/*************************************************************************/
 
-	pptr = append(pptr, "--------------------------------------------------------------------------------")
+	pptr = append(pptr, strings.Repeat("-", 80))
 	pptr = append(pptr, "run complete")
-	// pptr = append(pptr, fmt.Sprintf("execution time: %s", time.Since(runStartTime)))
 	t2 := time.Now()
 	pptr = append(pptr, fmt.Sprintf("execution time: %.2f seconds", t2.Sub(runStartTime).Seconds()))
 
-	saveText(pptr, p.Outfile, p.NoBOM, p.UseLF)
-	saveHtml(pptr, p.Outfileh, p.NoBOM, p.UseLF)
+	saveText(pptr, p.Outfile)
+	saveHtml(pptr, p.Outfileh)
 }
