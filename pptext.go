@@ -24,10 +24,15 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.02.20"
+/*
+  open issues:
+    1. edit distance is not rune-aware: "ōf" and "of" are not reported as 1 apart.
+*/
+
+const VERSION string = "2019.02.22"
 
 /*
-02.20 only generate HTML report
+02.22 full stop followed by unexpected sequence rewritten
 */
 
 var sw []string      // suspect words list
@@ -106,15 +111,19 @@ func straightCurly(lpb []string) bool {
 // text-wrap string into string with embedded newlines
 // with leader 9 spaces after first
 //
+// avoid very short lines
+// if final newline is within 8 characters of end, use a space
+
 func wraptext9(s string) string {
 	s2 := ""
 	runecount := 0
+	totalrunes := utf8.RuneCountInString(s)
 	// rc := utf8.RuneCountInString(s)
 	for len(s) > 0 {
 		r, size := utf8.DecodeRuneInString(s) // first
 		runecount++
 		// replace space with newline (break on space)
-		if runecount >= 70 && r == ' ' {
+		if runecount >= 70 && runecount < totalrunes-8 && r == ' ' {
 			s2 += "\n         "
 			runecount = 0
 		} else {
@@ -122,6 +131,7 @@ func wraptext9(s string) string {
 		}
 		s = s[size:] // chop off rune
 	}
+
 	return s2
 }
 
@@ -1040,8 +1050,8 @@ func scannoCheck(wb []string) []string {
 					}
 					if ast < 5 || p.Verbose {
 						line := wb[n]
-						re := regexp.MustCompile(`(` + word + `)`)
-						line = re.ReplaceAllString(line, `☰$1☷`)
+						re := regexp.MustCompile(`(^|\P{L})(` + word + `)(\P{L}|$)`)
+						line = re.ReplaceAllString(line, `$1☰$2☷$3`)
 						re = regexp.MustCompile(`☰`)
 						loc := re.FindStringIndex(line)
 						line = getParaSegment(line, loc[0])
@@ -1069,6 +1079,8 @@ func scannoCheck(wb []string) []string {
 }
 
 // dash check
+// if there are 50 "-" in a paragraph, consider it to have long lines of "-" characters
+// as table separators, for example.
 func tcDashCheck(pb []string) []string {
 	rs := []string{}
 	rs = append(rs, "----- dash check -------------------------------------------------------------")
@@ -1078,7 +1090,8 @@ func tcDashCheck(pb []string) []string {
 	count := 0
 	for _, para := range pb {
 		t := re.FindAllStringIndex(para, -1)
-		if t != nil { // one or more matches
+		if t != nil && strings.Count(para, "-") < 50 && strings.Count(para, "—") < 50 {
+			// one or more matches
 			for _, u := range t {
 				if p.Verbose || count < 5 {
 					s := getParaSegment(para, u[0])
@@ -1290,7 +1303,7 @@ func tcLongLines(wb []string) []string {
 	if count == 0 {
 		rs = append(rs, "  no long lines found in text.")
 	}
-	if count == 0 || count > 10 {
+	if count == 0 {
 		rs[0] = "☲" + rs[0] // style dim
 	} else {
 		rs[0] = "☳" + rs[0] // style black
@@ -1710,16 +1723,49 @@ func tcParaLevel() []string {
 	// re0009a := regexp.MustCompile(`\.[a-zA-Z]`)    // the.horse
 	// re0009b := regexp.MustCompile(`[^(Mr)(Mrs)(Dr)]\.\s[a-z]`)   // the. horse
 
-	re_ns := regexp.MustCompile(`(\p{L}+)\.(\p{Ll}+)`)    // word.word
-	re_ws := regexp.MustCompile(`(\p{L}+)\.\s+(\p{Ll}+)`) // word. word
+	// Hit the ball.and run.
+	// Hit the ball.Then run.
+	// “Hit.”and run.
+	// “Hit.”Then run.
+	// any, any
+	re_ns := regexp.MustCompile(`(\p{L}+)\.[”’]?(\p{L}+)`)
+
+	// Hit the ball. and run.
+	// “Hit.” and run.
+	// lower, space, lower
+	re_ws := regexp.MustCompile(`(\p{Ll}+)\.[”’]?\s+(\p{Ll}+)`)
 
 	sscnt = 0
+
+	re77 := regexp.MustCompile(`(^|\P{L})(\p{Lu}\.)(\p{Lu}\.)+(\P{L}|$)`)
+	re78 := regexp.MustCompile(`\d+d\.`)
+	re79 := regexp.MustCompile(`\d+s\.`)
 
 	// iterate over each paragraph
 	for _, para := range pbuf {
 
-		loc_ns := re_ns.FindAllStringSubmatchIndex(para, -1)
-		loc_ws := re_ws.FindAllStringSubmatchIndex(para, -1)
+		// first, pull out any initials groups
+		// We founded M.S.D. on Colorado Boulevard.
+		para2 := re77.ReplaceAllString(para, "")
+
+		// now any common abbreviations
+		para2 = strings.Replace(para2, "a.m.", "", -1)
+		para2 = strings.Replace(para2, "Mr.", "", -1)
+		para2 = strings.Replace(para2, "Mrs.", "", -1)
+		para2 = strings.Replace(para2, "Dr.", "", -1)
+		para2 = strings.Replace(para2, "Rev.", "", -1)
+		para2 = strings.Replace(para2, "i.e.", "", -1)
+		para2 = strings.Replace(para2, "e.g.", "", -1)
+		para2 = strings.Replace(para2, "per cent.", "", -1)
+		para2 = strings.Replace(para2, "8vo.", "", -1)
+		para2 = strings.Replace(para2, "Co.", "", -1)
+
+		para2 = re78.ReplaceAllString(para2, "")
+		para2 = re79.ReplaceAllString(para2, "")
+
+		// look for patterns in modified paragraph
+		loc_ns := re_ns.FindAllStringSubmatchIndex(para2, -1)
+		loc_ws := re_ws.FindAllStringSubmatchIndex(para2, -1)
 
 		// loc_?s will be of this form if two instances are in the paragraph:
 		// [[4 15 4 8 10 15] [20 28 20 22 24 28]]
@@ -1745,10 +1791,11 @@ func tcParaLevel() []string {
 		// go across this paragraph examining each match
 
 		// matches without spaces are always an error
+		// 'word.word' 'word.”word'
 		for _, lmatch := range loc_ns {
 			if doreport {
 				if sscnt == 0 {
-					rs = append(rs, "  full stop followed by lower case letter")
+					rs = append(rs, "  full stop followed by unexpected sequence")
 					count++
 				}
 				sscnt++
@@ -1797,7 +1844,7 @@ func tcParaLevel() []string {
 
 			if doreport {
 				if sscnt == 0 {
-					rs = append(rs, "  full stop followed by lower case letter")
+					rs = append(rs, "  full stop followed by unexpected sequence")
 					count++
 				}
 				sscnt++
@@ -1813,9 +1860,33 @@ func tcParaLevel() []string {
 	}
 
 	// ------------------------------------------------------------------------
+	// check: initials spacing
+	/*
+		re_is := regexp.MustCompile(`(\p{Lu})\.(\p{Lu})`)
+		// iterate over each paragraph
+		for _, para := range pbuf {
+
+			loc_is := re_is.FindAllStringSubmatchIndex(para, -1)
+			for _, lmatch := range loc_is {
+				if sscnt == 0 {
+					rs = append(rs, "  initials spacing")
+					count++
+				}
+				sscnt++
+				if sscnt < RLIMIT || p.Verbose {
+					rs = append(rs, "    "+getParaSegment(para, lmatch[0]))
+				}
+			}
+		}
+		if sscnt > RLIMIT && !p.Verbose {
+			rs = append(rs, fmt.Sprintf("    ...%d more", sscnt-RLIMIT))
+		}
+	*/
+
+	// ------------------------------------------------------------------------
 	// check: query missing paragraph break
 
-	re = regexp.MustCompile(`”\s*“`)
+	re = regexp.MustCompile(`[\.\?\!]”\s*“`)
 	sscnt = 0
 	for _, para := range pbuf {
 		loc := re.FindStringIndex(para)
@@ -1932,8 +2003,11 @@ func tcParaLevel() []string {
 	// include thought-break line all '-'
 	// include ending with a footnote reference
 	const (
-		LEGALAMERICAN = `\.$|:$|\?$|!$|—$|.["”]|\?["”]$|['’]["”]$|!["”]$|—["”]|-----|\[\d+\]$`
-		LEGALBRITISH  = `\.$|:$|\?$|!$|—$|.['’]|\?['’]$|["”]['’]$|!['’]$|—['’]|-----|\[\d+\]$`
+		// LEGALAMERICAN = `\.$|:$|\?$|!$|—$|.["”]|\?["”]$|['’]["”]$|!["”]$|—["”]|-----|\[\d+\]$`
+		// LEGALBRITISH  = `\.$|:$|\?$|!$|—$|.['’]|\?['’]$|["”]['’]$|!['’]$|—['’]|-----|\[\d+\]$`
+		// new: any right bracket accepts the entire paragraph
+		LEGALAMERICAN = `\.$|:$|\?$|!$|—$|.["”]|\?["”]$|['’]["”]$|!["”]$|—["”]|-----|\]$`
+		LEGALBRITISH  = `\.$|:$|\?$|!$|—$|.['’]|\?['’]$|["”]['’]$|!['’]$|—['’]|-----|\]$`
 	)
 
 	re_end := regexp.MustCompile(LEGALAMERICAN)
@@ -1946,7 +2020,14 @@ func tcParaLevel() []string {
 		if strings.HasPrefix(para, " ") {
 			continue // only a normal paragraph
 		}
-		if !re_end.MatchString(para) {
+		para2 := para[:]
+
+		// if para ends with an italic, drop it for this test
+		if strings.HasSuffix(para2, "_") {
+			para2 = para2[:len(para2)-1] // drop underscore (italic)
+		}
+
+		if !re_end.MatchString(para2) {
 			if sscnt == 0 {
 				rs = append(rs, "  query: unexpected paragraph end")
 				count++
@@ -1992,7 +2073,6 @@ func tcGutChecks(wb []string) []string {
 
 	re0003c := regexp.MustCompile(`cb|gb|pb|sb|tb|wh|fr|br|qu|tw|gl|fl|sw|gr|sl|cl|iy`) // rare to end word
 	re0003d := regexp.MustCompile(`hr|hl|cb|sb|tb|wb|tl|tn|rn|lt|tj`)                   // rare to start word
-	re0004 := regexp.MustCompile(`([A-Z])\.([A-Z])`)                                    // initials without space
 	re0006 := regexp.MustCompile(`^.$`)                                                 // single character line
 	re0007 := regexp.MustCompile(`(\p{L}\- \p{L})|(\p{L} \-\p{L})`)                     // broken hyphenation
 
@@ -2027,7 +2107,7 @@ func tcGutChecks(wb []string) []string {
 	re0024 := regexp.MustCompile(`^[!;:,.?]`)   // line starts with (selected) punctuation
 	re0025 := regexp.MustCompile(`^-[^-]`)      // line starts with hyphen followed by non-hyphen
 
-	re0026 := regexp.MustCompile(`\.+[’”]*\p{L}`) //
+	// re0026 := regexp.MustCompile(`\.+[’”]*\p{L}`) // full stop followed by letter (redundant 2019.2.21)
 
 	// some traditional gutcheck tests were for
 	//   "string that contains cb", "string that ends in cl", "string that contains gbt",
@@ -2081,9 +2161,9 @@ func tcGutChecks(wb []string) []string {
 			gcreports = append(gcreports, reportln{"mixed letters and numbers in word", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
 		}
 
-		if re0026.MatchString(line) {
-			gcreports = append(gcreports, reportln{"full stop followed by letter", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
-		}
+		// if re0026.MatchString(line) {
+		//   gcreports = append(gcreports, reportln{"full stop followed by letter", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+		//}
 
 		if re0000.MatchString(line) {
 			gcreports = append(gcreports, reportln{"opening square bracket followed by other than I, G, M or number", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
@@ -2127,9 +2207,6 @@ func tcGutChecks(wb []string) []string {
 					gcreports = append(gcreports, reportln{fmt.Sprintf("query word starting with %s", first2), fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
 				}
 			}
-		}
-		if re0004.MatchString(line) {
-			gcreports = append(gcreports, reportln{"initials spacing", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
 		}
 		if re0006.MatchString(line) {
 			gcreports = append(gcreports, reportln{"single character line", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
@@ -2479,6 +2556,7 @@ func showWordInContext(word string) []string {
 }
 
 // iterate over every suspect word at least six runes long
+// update: use any length
 // case insensitive
 // looking for a any word in the text that is "near"
 func levencheck(suspects []string) []string {
@@ -2527,6 +2605,7 @@ func levencheck(suspects []string) []string {
 	var reportd map[string]int
 	reportd = make(map[string]int)
 
+	re31 := regexp.MustCompile(`[a-zA-Z]`)
 	// for each suspect word, check against all words.
 	for _, suspect := range suspects {
 		suspectlc := strings.ToLower(suspect)
@@ -2546,8 +2625,9 @@ func levencheck(suspects []string) []string {
 				continue
 			}
 
-			// must be five letters or more
-			if utf8.RuneCountInString(suspectlc) < 5 {
+			// must be five letters or more or contain unexpected character
+			s31 := re31.ReplaceAllString(suspectlc, "")
+			if utf8.RuneCountInString(suspectlc) < 5 && len(s31) == 0 {
 				continue
 			}
 
