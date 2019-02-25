@@ -24,15 +24,10 @@ import (
 	"unicode/utf8"
 )
 
-/*
-  open issues:
-    1. edit distance is not rune-aware: "ōf" and "of" are not reported as 1 apart.
-*/
-
-const VERSION string = "2019.02.22"
+const VERSION string = "2019.02.23"
 
 /*
-02.22 full stop followed by unexpected sequence rewritten
+02.23 ligature distance adjustments for edit distance
 */
 
 var sw []string      // suspect words list
@@ -2605,10 +2600,14 @@ func levencheck(suspects []string) []string {
 	var reportd map[string]int
 	reportd = make(map[string]int)
 
-	re31 := regexp.MustCompile(`[a-zA-Z]`)
+	re31 := regexp.MustCompile(`[a-zA-Z0-9’]`)
 	// for each suspect word, check against all words.
 	for _, suspect := range suspects {
 		suspectlc := strings.ToLower(suspect)
+
+		// smoke and mirrors using "e" lookalike
+		suspectlc = strings.Replace(suspectlc, "æ", "a𝚎", -1)
+		suspectlc = strings.Replace(suspectlc, "œ", "o𝚎", -1)
 
 		for testword, _ := range wordListMapCount {
 			testwordlc := strings.ToLower(testword)
@@ -2652,6 +2651,9 @@ func levencheck(suspects []string) []string {
 				if counttestword == 0 || countsuspect == 0 {
 					break
 				}
+
+				suspectlc := strings.Replace(suspectlc, "o𝚎", "œ", -1)
+				suspectlc = strings.Replace(suspectlc, "a𝚎", "æ", -1)
 
 				rs = append(rs, fmt.Sprintf("%s(%d):%s(%d)", suspectlc, countsuspect,
 					testwordlc, counttestword))
