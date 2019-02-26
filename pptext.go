@@ -24,11 +24,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.02.23"
-
-/*
-02.23 ligature distance adjustments for edit distance
-*/
+const VERSION string = "2019.02.25"
 
 var sw []string      // suspect words list
 var rs []string      // array of strings for local aggregation
@@ -702,6 +698,8 @@ type rp struct {
 	rpp int
 }
 
+// note: where is a byte count, not a rune count
+
 func getParaSegment(ss string, where int) string {
 
 	s := "" // string to return
@@ -714,27 +712,37 @@ func getParaSegment(ss string, where int) string {
 		w = width
 	}
 
-	llim := where - 30
-	rlim := where + 30
-	// if llim = -5 we are 5 too far. tack to right
-	if llim < 0 {
-		rlim += -llim
-		llim = 0
-	}
-	// if rlim > len(rps), too far. tack to left
-	if rlim > len(rps) {
-		llim -= rlim - len(rps)
-		rlim = len(rps)
-	}
-	// last adjust: llim underflow
-	if llim < 0 {
-		llim = 0
+	// find the rune index of the "where" location
+	// test for end of ss string before accessing last+1 char
+	i := 0
+	for ; i < len(rps) && rps[i].rpp < where; i++ {
 	}
 
-	// find spaces...
-	for ; llim > 0 && rps[llim].rpr != ' '; llim-- {
+	// adjust left and right limit
+	llim := i - 30
+	rlim := i + 30
+
+	if llim < 0 {
+		llim = 0
+		rlim = 60
 	}
-	for ; rlim < len(rps) && rps[rlim].rpr != ' '; rlim++ {
+	if rlim >= len(rps) {
+		llim = len(rps) - 60
+		rlim = len(rps)
+	}
+	if llim < 0 {
+		llim = 0
+	}
+	if rlim >= len(rps) {
+		rlim = len(rps)
+	}
+
+	// break on spaces or start/end of ss
+	for llim > 0 && rps[llim].rpr != ' ' {
+		llim--
+	}
+	for rlim < len(rps) && rps[rlim].rpr != ' ' {
+		rlim++
 	}
 
 	rpseg := rps[llim:rlim]
@@ -742,7 +750,8 @@ func getParaSegment(ss string, where int) string {
 		s += string(t.rpr)
 	}
 	s = strings.TrimSpace(s)
-
+	s = strings.Replace(s, "  ", " ", -1)
+	s = strings.Replace(s, "  ", " ", -1)
 	return s
 }
 
@@ -2029,7 +2038,7 @@ func tcParaLevel() []string {
 			}
 			sscnt++
 			if sscnt < RLIMIT || p.Verbose {
-				rs = append(rs, "    ..."+getParaSegment(para, len(para))) // show paragraph end
+				rs = append(rs, "    ..."+getParaSegment(para, len(para)-1)) // show paragraph end
 			}
 		}
 	}
