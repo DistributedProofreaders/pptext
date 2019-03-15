@@ -1,0 +1,76 @@
+<html>
+<head>
+<title>smart quote scan notes</title>
+<meta charset="utf-8" />
+</head>
+<body>
+
+
+<pre>03.15.19: Analysis of ambiguous close quote
+
+	From <i>Luck of the Kid</i>:
+
+	  And he handed me all these ‘God’s blessings’ that aren’t never content.
+
+	could be
+
+	  The preacher said ‘God’s blessings’ power is immense’ before he left.
+
+	Same punctuation in the same order, but the close quote is after
+	"blessings" in first example and after "immense" in second example.
+	This will be mis-handled by the blessings’ -> blessing aspell check.
+	I may need to add a near-quote resolution piece, but if I do that has
+	to work across lines.</pre>
+
+<pre>03.15.19: Runes versus characters
+
+	Regex limitations need to be understood with respect to UTF-8. The usual
+	word boundary expressions fail when adjacent to multi-byte UTF-8
+	representations. Example from ppscan:
+
+	  will thus form another _raison d’@être_ for the additional volumes.
+
+	The apostrophe is internal and should not have been questioned. Go
+	language rune handling handles this correctly in pptext.</pre>
+
+
+<pre>03.15.19: False positive triggered by spelling error
+
+	This is flagged as a suspect:
+
+	  JUNIOR TRAVELLERS’ CLUB
+
+	The algorithm takes TRAVELLERS’ to TRAVELLER and then looks that up
+	in aspell. It concludes "traveller" is not a word, so the protection
+	algorithm fails, the apostrophe is not classified, and the scan
+	program flags it as an unclosed close quote. This is a false positive
+	(from the scan) that is actually an error (from the typo).</pre>
+
+<pre>03.15.19 catchable error missed [FIXME]
+
+	Here is the internal coding of a passage from a book that contains an error:
+
+	  Here a new voice contributed to the conversation. Its contribution,
+	  though imperfectly understood, appeared to be “Nar! Why sh▿d I wite for
+	  a little Jew in ⸢is dressin⸣ gown? Little Jews in their dressin▵ gowns
+	  ▾as their drinks, and we ▾as our drinks. Bitter, miss.”
+
+	In the original text, part of it shows as:
+
+	  a little Jew in ‘is dressin’ gown
+
+	Since the open quote is turned as shown, it has to be considered an open
+	single quote. The "’is" -> "his" code cannot kick in (which would uncover
+	the error). It appears as a quoted phrase and is not flagged though it is
+	an error.
+
+	That said, it should have been flagged because coincidentally the phrase
+	ends with "in’" such that "dressin’" -> "dressing" will resolve to an
+	apostrophe, such that the internal form would be:
+
+	  a little Jew in ⸢is dressin▵ gown
+
+	That should have flagged as an unclosed open single quote.</pre>
+
+</body>
+</html>
