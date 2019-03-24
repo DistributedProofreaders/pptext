@@ -4,6 +4,12 @@ author:    Roger Frank
 license:   GPL
 */
 
+/*
+developer reference:
+https://golang.org/pkg/unicode/#pkg-constants
+https://golang.org/pkg/regexp/syntax/
+*/
+
 package main
 
 import (
@@ -24,7 +30,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.03.15"
+const VERSION string = "2019.03.24"
 
 var sw []string      // suspect words list
 var rs []string      // array of strings for local aggregation
@@ -886,8 +892,10 @@ func aspellCheck() ([]string, []string, []string) {
 	for ; i < len(suspect_words); i++ {
 		t := suspect_words[i]
 
-		// if word occurs more than 6 times, accept it
-		if wordListMapCount[t] >= 6 {
+		// if word occurs 5 or more times, accept it
+		if wordListMapCount[strings.ToLower(t)]+
+			wordListMapCount[strings.Title(strings.ToLower(t))]+
+			wordListMapCount[strings.ToUpper(t)] >= 5 {
 			suspect_words = append(suspect_words[:i], suspect_words[i+1:]...)
 			i--
 			continue
@@ -907,20 +915,22 @@ func aspellCheck() ([]string, []string, []string) {
 
 	// show each word in context
 
-	var sw []string                    // suspect words
-	lcreported := make(map[string]int) // map to hold downcased words reported
+	var sw []string // suspect words
+	// lcreported := make(map[string]int) // map to hold downcased words reported
 
 	// rs = append(rs, fmt.Sprintf("Suspect words:"))
 	re4 := regexp.MustCompile(`☰`)
 
 	for _, word := range suspect_words {
-		// if I've reported the word in any case, don't report it again
-		lcword := strings.ToLower(word)
-		if _, ok := lcreported[lcword]; ok { // if it is there already, skip
-			continue
-		} else {
-			lcreported[lcword] = 1
-		}
+		/*
+			// if I've reported the word in any case, don't report it again
+			lcword := strings.ToLower(word)
+			if _, ok := lcreported[lcword]; ok { // if it is there already, skip
+				continue
+			} else {
+				lcreported[lcword] = 1
+			}
+		*/
 
 		sw = append(sw, word)                    // simple slice of only the word
 		rs = append(rs, fmt.Sprintf("%s", word)) // word we will show in context
@@ -942,7 +952,7 @@ func aspellCheck() ([]string, []string, []string) {
 					line = getParaSegment(line, loc[0])
 					rs = append(rs, fmt.Sprintf("  %6d: %s", where, line)) // 1-based
 				}
-				if reported > 1 && len(theLines) > 2 {
+				if !p.Verbose && reported > 1 && len(theLines) > 2 {
 					rs = append(rs, fmt.Sprintf("  ...%6d more", len(theLines)-2))
 					break
 				}
@@ -1104,12 +1114,6 @@ func prettyPrint(v interface{}) (err error) {
 	return
 }
 
-/* ********************************************************************** */
-/*                                                                        */
-/* from textcheck.go                                                      */
-/*                                                                        */
-/* ********************************************************************** */
-
 // check for "motor-car" and "motorcar"
 
 func tcHypConsistency(wb []string) []string {
@@ -1178,96 +1182,87 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 	rs = append(rs, "")
 	count := 0
 
-	re := regexp.MustCompile(`\p{L}\p{L}+ \p{L}\p{L}+`) // two words sep by space
-	for s, _ := range wordListMapCount {
-		if strings.Contains(s, "-") {
-			s1done, s2done := false, false
-			reported := false
+	for wstr := range wordListMapCount {
+		if strings.Contains(wstr, "-") {
 			// split into two words into hpair (hyphenation pair)
-			hpair := strings.Split(s, "-")
+			hpair := strings.Split(wstr, "-")
 			if len(hpair) != 2 {
 				continue // only handle two words with one hyphen
 			}
+			if hpair[0] == "" || hpair[1] == "" {
+				continue // need words in both spots.
+			}
 			// both words lower case for compare
 			hpairlow := []string{strings.ToLower(hpair[0]), strings.ToLower(hpair[1])}
-			// go through each paragraph and look for those two words
-			// in succession separated by a space
-			for _, para := range pb { // go over each paragraph
-				if reported {
-					continue
-				}
-				start := 0 // at start of para
-				// find two space separated words into spair (space pair)
-				for u := re.FindStringIndex(para[start:]); u != nil; {
-					pair := (para[start+u[0] : start+u[1]])
-					spair := strings.Split(pair, " ")
-					// both of these words also lower case also
-					spairlow := []string{strings.ToLower(spair[0]), strings.ToLower(spair[1])}
-					if !reported && spairlow[0] == hpairlow[0] && spairlow[1] == hpairlow[1] {
-						// we have "get away" and "get-away" case insensitive
-						count++
+			// look for first word in text
+			s := wordListMapLines[hpairlow[0]]
+			s += "," + wordListMapLines[strings.Title(hpairlow[0])]
+			s += "," + wordListMapLines[strings.ToUpper(hpairlow[0])]
+			s = strings.Replace(s, ",", " ", -1)
+			s = strings.TrimSpace(s)
+			wreported := map[string]int{}
 
-						s1a := fmt.Sprintf("(?i)(\\P{L}%s-%s\\P{L})", hpair[0], hpair[1])
-						re1a := regexp.MustCompile(s1a) // two words sep by hyphen
-						s2a := fmt.Sprintf("(?i)(\\P{L}%s %s\\P{L})", spair[0], spair[1])
-						re2a := regexp.MustCompile(s2a) // two words sep by space
-
-						// count of each type
-						counthyp, countspc := 0, 0
-						for n, line := range wb {
-							if re1a.MatchString(" " + line + " ") {
-								counthyp++
+			if s != "" {
+				// we have lines to check
+				ssp := strings.Split(s, " ")
+				for _, line := range ssp {
+					iline, _ := strconv.Atoi(line)
+					tmpline := ""
+					if iline == 0 {
+						continue
+					}
+					if iline < len(wb) {
+						tmpline = wb[iline-1] + " " + wb[iline]
+					} else {
+						tmpline = wb[iline-1]
+					}
+					re001 := regexp.MustCompile("(?i)" + hpairlow[0] + " " + hpairlow[1])
+					where := re001.FindAllString(tmpline, -1)
+					if where != nil {
+						count1 := 0
+						count2 := 0
+						acc1 := []string{}
+						acc2 := []string{}
+						re002 := regexp.MustCompile("(?i)" + hpairlow[0] + " " + hpairlow[1])
+						re003 := regexp.MustCompile("(?i)" + hpairlow[0] + "$")
+						re004 := regexp.MustCompile("(?i)" + "^" + hpairlow[1])
+						re005 := regexp.MustCompile("(?i)" + hpairlow[0] + "-" + hpairlow[1])
+						for i, _ := range wb {
+							// count word space word or word newline word
+							where := re002.FindAllString(wb[i], -1)
+							if where != nil {
+								count1++
+								acc1 = append(acc1, fmt.Sprintf("%6d: %s", i+1, wb[i]))
 							}
-							if re2a.MatchString(" " + line + " ") {
-								countspc++
+							if i < len(wb)-1 {
+								where2 := re003.FindAllString(wb[i], -1)
+								where3 := re004.FindAllString(wb[i+1], -1)
+								if where2 != nil && where3 != nil {
+									count1++
+									acc1 = append(acc1, fmt.Sprintf("%6d: %s", i+1, wb[i]))
+								}
 							}
-							if (n < len(wb)-1) && strings.HasSuffix(line, spair[0]) && strings.HasPrefix(wb[n+1], spair[1]) {
-								countspc++
+							// count word hyphen word
+							where4 := re005.FindAllString(wb[i], -1)
+							if where4 != nil {
+								count2++
+								acc2 = append(acc2, fmt.Sprintf("%6d: %s", i+1, wb[i]))
 							}
 						}
-
-						rs = append(rs, fmt.Sprintf("\"%s-%s\" (%d) ❬-❭ \"%s %s\" (%d)",
-							hpair[0], hpair[1], counthyp, spair[0], spair[1], countspc))
-						// show where they are (case insensitive)
-
-						for n, line := range wb {
-							// hyphenated
-							if !s1done && re1a.MatchString(" "+line+" ") {
-								line = re1a.ReplaceAllString(" "+line+" ", `☰$1☷`)
-								line = strings.Replace(line, "☰ ", " ☰", -1)
-								line = strings.Replace(line, " ☷", "☷ ", -1)
-								rs = append(rs, fmt.Sprintf("%7d: %s", n+1, strings.TrimSpace(line))) // 1=based
-								s1done = true
+						if _, ok := wreported[hpair[0]]; !ok {
+							rs = append(rs, fmt.Sprintf("\"%s-%s\" (%d) ❬-❭ \"%s %s\" (%d)",
+								hpair[0], hpair[1], count1, hpairlow[0], hpairlow[1], count2))
+							if p.Verbose {
+								rs = append(rs, acc1...)
+								rs = append(rs, acc2...)
+							} else {
+								rs = append(rs, acc1[0])
+								rs = append(rs, acc2[0])
 							}
-							// spaced (can be over two lines)
-							if !s2done && re2a.MatchString(" "+line+" ") {
-								line = re2a.ReplaceAllString(" "+line+" ", `☰$1☷`)
-								line = strings.Replace(line, "☰ ", " ☰", -1)
-								line = strings.Replace(line, " ☷", "☷ ", -1)
-								rs = append(rs, fmt.Sprintf("%7d: %s", n+1, strings.TrimSpace(line))) // 1=based
-								s2done = true
-							}
-							if (n < len(wb)-1) && !s2done && strings.HasSuffix(line, spair[0]) && strings.HasPrefix(wb[n+1], spair[1]) {
-								re3t := regexp.MustCompile("(" + spair[0] + ")")
-								ltop := re3t.ReplaceAllString(wb[n], `☰$1☷`)
-								rs = append(rs, fmt.Sprintf("%7d: %s", n+1, ltop)) // 1=based
-								re3b := regexp.MustCompile("(" + spair[1] + ")")
-								lbot := re3b.ReplaceAllString(wb[n+1], `☰$1☷`)
-								rs = append(rs, fmt.Sprintf("         %s", lbot))
-								s2done = true
-							}
-							if s1done && s2done {
-								if !reported {
-									rs = append(rs, "")
-								}
-								// we have reported once for this hyphenated word
-								reported = true
-								break
-							}
+							wreported[hpair[0]] = 1
+							count++
 						}
 					}
-					start += u[0] + len(spair[0])        // skip over first word
-					u = re.FindStringIndex(para[start:]) // get next pair
 				}
 			}
 		}
@@ -1405,39 +1400,309 @@ func scannoCheck(wb []string) []string {
 // dash check
 // if there are 50 "-" in a paragraph, consider it to have long lines of "-" characters
 // as table separators, for example.
-func tcDashCheck(pb []string) []string {
+
+// rewrite of dash check 2019.03.22
+// obfuscate what is legal. flag what remains (even on same line)
+//
+
+/*
+These are the dash characters I qualify and protect
+	- hyphen minus (keyboard "-")
+		allow these between two letters \p{L}‐\p{L}
+		allow 8 or more of these as a separator ‐{8,}
+	‐ hyphen
+		allow these between two letters \p{L}‐\p{L}
+		allow 8 or more of these as a separator ‐{8,}
+	‑ non-breaking hyphen
+		allow these between two letters \p{L}‐\p{L}
+	‒ figure dash (i.e. to connect digits in a phone number)
+		allow these between two numbers \p{Nd}‒\p{Nd}
+	– en dash (to show a range of numbers)
+		allow these between two numbers \p{Nd}–\p{Nd}
+		allow these between two numbers \p{Nd}\s–\s\p{Nd}
+	— em dash
+		allow patterns:
+			\p{L}—\p{L} between letters with no spacing
+				My favorite food—pizza—originated in Italy.
+				My granddaughter—Kenzie—plays volleyball.
+			\p{Ll}—\p{Pe} between lower-case letter and closing punctuation
+				“What if we—”
+			\p{Ll}— \p{Lu} lower-case letter, en dash, space, upper-case letter
+				If you tell him— Wait, I will give you this.
+
+These are dash characters I will flag
+	- HYPHEN-MINUS
+	֊ ARMENIAN HYPHEN
+	־ HEBREW PUNCTUATION MAQAF
+	᐀ CANADIAN SYLLABICS HYPHEN
+	᠆ MONGOLIAN TODO SOFT HYPHEN
+	‐ HYPHEN
+	‑ NON-BREAKING HYPHEN
+	‒ FIGURE DASH
+	– EN DASH
+	— EM DASH
+	― HORIZONTAL BAR
+	⸗ DOUBLE OBLIQUE HYPHEN
+	⸚ HYPHEN WITH DIAERESIS
+	⸺ TWO-EM DASH
+	⸻ THREE-EM DASH
+	⹀ DOUBLE HYPHEN
+	〜 WAVE DASH
+	〰 WAVY DASH
+	゠ KATAKANA-HIRAGANA DOUBLE HYPHEN
+	︱ PRESENTATION FORM FOR VERTICAL EM DASH
+	︲ PRESENTATION FORM FOR VERTICAL EN DASH ﹘ SMALL EM DASH
+	﹣ SMALL HYPHEN-MINUS
+	－ FULLWIDTH HYPHEN-MINUS
+*/
+
+//
+//
+//
+//
+//
+//
+
+func tcDashCheck(wb []string, pb []string) []string {
+
 	rs := []string{}
 	rs = append(rs, "----- dash check -------------------------------------------------------------")
 	rs = append(rs, "")
 
-	re := regexp.MustCompile(`(—)\s|\s(—)|(—-)|(-—)|(-\s+-)|(—\s+-)|(-\s+—)|(--)|[^—](———)[^—]`)
-	count := 0
-	for _, para := range pb {
-		t := re.FindAllStringIndex(para, -1)
-		if t != nil && strings.Count(para, "-") < 50 && strings.Count(para, "—") < 50 {
-			// one or more matches
-			for _, u := range t {
-				if p.Verbose || count < 5 {
-					s := getParaSegment(para, u[0])
-					s2 := fmt.Sprintf("[%s]", para[u[0]:u[1]])
-					rs = append(rs, fmt.Sprintf("   %10s %s", s2, s))
-				}
-				count++
-			}
+	// first pass: protect what is allowed
+
+	dbuf := make([]string, len(wb))
+	copy(dbuf, wb) // local writeable copy
+
+	re00 := regexp.MustCompile(`\p{L}(-\p{L})+`)    // hyphen-minus between two letters
+	re01 := regexp.MustCompile(`\p{L}(‐\p{L})+`)    // hyphen between two letters
+	re02 := regexp.MustCompile(`-{8,}`)             // h-m eight or more as a separator
+	re03 := regexp.MustCompile(`\p{L}(‐\p{L})+`)    // non-breaking hyphen between two letters
+	re04 := regexp.MustCompile(`\p{Nd}‒\p{Nd}`)     // figure dash between two numbers
+	re05 := regexp.MustCompile(`\p{Nd}–\p{Nd}`)     // en-dash between two numbers
+	re06 := regexp.MustCompile(`\p{Nd}\s–\s\p{Nd}`) // with spaces
+	re07 := regexp.MustCompile(`\p{L}—\p{L}`)       // em dash between letters with no spacing
+	re08 := regexp.MustCompile(`[\p{Ll}I]—\p{Pf}`)  // between lower-case letter or "I" and final punctuation
+	re09 := regexp.MustCompile(`\p{Ll}— \p{Lu}`)    // lower-case letter, en dash, space, upper-case letter
+
+	re0a := regexp.MustCompile(`—$`) // dash can end a line if verbose not selected
+
+	// special case: deleted words
+	re0b := regexp.MustCompile(`\s——\s`) // as soon as Mr. —— had left the ship.
+
+	// for this check, consider exactly two em-dashes as one
+	re0c := regexp.MustCompile(`([^—])(——)([^—])`)
+	re0d := regexp.MustCompile(`\p{Zs}*—`)
+
+	for i := 0; i < len(dbuf)-1; i++ {
+		if dbuf[i] == "" && re0d.MatchString(dbuf[i+1]) {
+			dbuf[i+1] = strings.Replace(dbuf[i+1], "—", "", 1) // allow m-dash to start a paragraph
 		}
 	}
-	if !p.Verbose && count > 5 {
-		rs = append(rs, fmt.Sprintf("         ... %d more", count-5))
+
+	for i := 0; i < len(dbuf); i++ {
+		dbuf[i] = strings.Replace(dbuf[i], "_", "a", -1)  // obfuscate italics for this test
+		dbuf[i] = re0b.ReplaceAllString(dbuf[i], " ")     // deleted words
+		dbuf[i] = re0c.ReplaceAllString(dbuf[i], "$1—$3") // exactly two em-dashes become one
+		dbuf[i] = re00.ReplaceAllString(dbuf[i], "")
+		dbuf[i] = re01.ReplaceAllString(dbuf[i], "")
+		dbuf[i] = re02.ReplaceAllString(dbuf[i], "")
+		dbuf[i] = re03.ReplaceAllString(dbuf[i], "")
+		dbuf[i] = re04.ReplaceAllString(dbuf[i], "")
+		dbuf[i] = re05.ReplaceAllString(dbuf[i], "")
+		dbuf[i] = re06.ReplaceAllString(dbuf[i], "")
+		dbuf[i] = re07.ReplaceAllString(dbuf[i], "")
+		dbuf[i] = re08.ReplaceAllString(dbuf[i], "")
+		dbuf[i] = re09.ReplaceAllString(dbuf[i], "")
+		if !p.Verbose {
+			dbuf[i] = re0a.ReplaceAllString(dbuf[i], "")
+		}
 	}
+
+	// second pass: flag what remains
+	count := 0
+	re := regexp.MustCompile(`\p{Pd}`)         // any dash
+	re2 := regexp.MustCompile(`\p{Pd}\p{Pd}+`) // consecutive dashes
+
+	a_hh := []string{}
+	a_hm := []string{}
+	a_hy := []string{}
+	a_nb := []string{}
+	a_fd := []string{}
+	a_en := []string{}
+	a_em := []string{}
+	a_un := []string{}
+
+	for i, line := range dbuf {
+		if re.MatchString(line) {
+			t2 := re2.MatchString(line)
+			if t2 {
+				a_hh = append(a_hh, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				continue
+			}
+			if strings.Contains(line, "-") { // hyphen-minus
+				a_hm = append(a_hm, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				continue
+			}
+
+			if strings.Contains(line, "‐") { // hyphen
+				a_hy = append(a_hy, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				continue
+			}
+			if strings.Contains(line, "‐") { // non-breaking hyphen
+				a_nb = append(a_nb, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				continue
+			}
+			if strings.Contains(line, "‒") { // figure dash
+				a_fd = append(a_fd, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				continue
+			}
+			if strings.Contains(line, "–") { // en-dash
+				a_en = append(a_en, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				continue
+			}
+			if strings.Contains(line, "—") { // em-dash
+				a_em = append(a_em, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				continue
+			}
+			// if we get here, we have an unrecognized dash
+			a_un = append(a_un, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+		}
+	}
+
+	// if "--" detected, report only the first five.
+	thisReportCount := 0
+
+	if len(a_hh) > 0 {
+		thisReportCount = 0
+		rs = append(rs, "  adjacent dashes:")
+		countdd := 0
+		for _, s := range a_hh {
+			if strings.Contains(s, "--") {
+				countdd++
+			}
+			if countdd == 5 {
+				rs = append(rs, "          [book uses \"--\" as em-dash. not reporting further]")
+			}
+			if countdd < 5 || !strings.Contains(s, "--") {
+				thisReportCount++
+				if !p.Verbose && thisReportCount == 10 {
+					rs = append(rs, fmt.Sprintf("     ... %d more", len(a_hh)-10))
+				}
+				if p.Verbose || thisReportCount < 10 {
+					rs = append(rs, s)
+				}
+				count++
+
+			}
+			count++
+		}
+	}
+	if len(a_hm) > 0 {
+		thisReportCount = 0
+		rs = append(rs, "  hyphen-minus:")
+		for _, s := range a_hm {
+			thisReportCount++
+			if !p.Verbose && thisReportCount == 10 {
+				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_hm)-10))
+			}
+			if p.Verbose || thisReportCount < 10 {
+				rs = append(rs, s)
+			}
+			count++
+
+		}
+	}
+	if len(a_hy) > 0 {
+		rs = append(rs, "  hyphen:")
+		for _, s := range a_hy {
+			thisReportCount++
+			if !p.Verbose && thisReportCount == 10 {
+				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_hy)-10))
+			}
+			if p.Verbose || thisReportCount < 10 {
+				rs = append(rs, s)
+			}
+			count++
+
+		}
+	}
+	if len(a_nb) > 0 {
+		rs = append(rs, "  non-breaking hyphen:")
+		for _, s := range a_nb {
+			thisReportCount++
+			if !p.Verbose && thisReportCount == 10 {
+				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_nb)-10))
+			}
+			if p.Verbose || thisReportCount < 10 {
+				rs = append(rs, s)
+			}
+			count++
+
+		}
+	}
+	if len(a_fd) > 0 {
+		rs = append(rs, "  figure dash:")
+		for _, s := range a_fd {
+			thisReportCount++
+			if !p.Verbose && thisReportCount == 10 {
+				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_fd)-10))
+			}
+			if p.Verbose || thisReportCount < 10 {
+				rs = append(rs, s)
+			}
+			count++
+		}
+	}
+	if len(a_en) > 0 {
+		rs = append(rs, "  en-dash:")
+		for _, s := range a_en {
+			thisReportCount++
+			if !p.Verbose && thisReportCount == 10 {
+				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_en)-10))
+			}
+			if p.Verbose || thisReportCount < 10 {
+				rs = append(rs, s)
+			}
+			count++
+		}
+	}
+	if len(a_em) > 0 {
+		rs = append(rs, "  em-dash:")
+		for _, s := range a_em {
+			thisReportCount++
+			if !p.Verbose && thisReportCount == 10 {
+				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_em)-10))
+			}
+			if p.Verbose || thisReportCount < 10 {
+				rs = append(rs, s)
+			}
+			count++
+		}
+	}
+	if len(a_un) > 0 {
+		rs = append(rs, "  unrecognized dash:")
+		for _, s := range a_un {
+			thisReportCount++
+			if !p.Verbose && thisReportCount == 10 {
+				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_un)-10))
+			}
+			if p.Verbose || thisReportCount < 10 {
+				rs = append(rs, s)
+			}
+			count++
+		}
+	}
+
 	if count == 0 {
-		rs = append(rs, "  no dash check suspects found in text.")
+		rs = append(rs, "  no dash suspects found in text.")
 		rs[0] = "☲" + rs[0] // style dim
 	} else {
 		rs[0] = "☳" + rs[0] // style black
 	}
 	rs = append(rs, "")
 	rs[len(rs)-1] += "☷" // close style
-	tcec += count
+
 	return rs
 }
 
@@ -1964,10 +2229,10 @@ func tcBookLevel(wb []string) []string {
 	}
 
 	if p.Verbose || showmaball {
-		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "Mr", count_mr_period, "Mrs", count_mrs_period,
-			"Dr", count_dr_period))
-		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "Mr.", count_mr_space, "Mrs.", count_mrs_space,
-			"Dr.", count_dr_space))
+		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "Mr", count_mr_space, "Mrs", count_mrs_space,
+			"Dr", count_dr_space))
+		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "Mr.", count_mr_period, "Mrs.", count_mrs_period,
+			"Dr.", count_dr_period))
 	}
 
 	// ----- apostrophes and turned commas -----
@@ -2680,23 +2945,150 @@ func textCheck() []string {
 	rs = append(rs, fmt.Sprintf("* %-76s *", "TEXT ANALYSIS REPORT"))
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
 	rs = append(rs, "")
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4a", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcHypConsistency(wbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4b", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcHypSpaceConsistency(wbuf, pbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4c", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcAsteriskCheck(wbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4d", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcAdjacentSpaces(wbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4e", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcTrailingSpaces(wbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4f", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcLetterChecks(wbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4g", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcSpacingCheck(wbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4h", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcShortLines(wbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4i", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcLongLines(wbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4j", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcRepeatedWords(pbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4k", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcEllipsisCheck(wbuf)...)
-	rs = append(rs, tcDashCheck(pbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4l", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
+	rs = append(rs, tcDashCheck(wbuf, pbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4m", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, scannoCheck(wbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4n", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcCurlyQuoteCheck(wbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4o", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcGutChecks(wbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4p", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcBookLevel(wbuf)...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4q", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 	rs = append(rs, tcParaLevel()...)
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4r", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
+
 	if tcec == 0 { // test check error count
 		rs[0] = "☲" + rs[0] // style dim
 	} else { // something was reported
@@ -3372,6 +3764,8 @@ func readHeBe(infile string) (map[string]int, map[string]int) {
 
 // read in the chosen word list (good word list)
 // convert any straight quote marks to apostrophes
+// if lower case, add title and upper case
+// if title case, add upper case
 
 func readWordList(infile string) []string {
 	wd := []string{}
@@ -3395,6 +3789,20 @@ func readWordList(infile string) []string {
 	for i, word := range wd {
 		wd[i] = strings.Replace(word, "'", "’", -1)
 	}
+
+	// if lower case, add title and upper case
+	// if title case, add upper case
+	addwd := []string{}
+	for _, word := range wd {
+		if strings.ToLower(word) == word { // all lower case
+			addwd = append(addwd, strings.Title(word))   // title case word
+			addwd = append(addwd, strings.ToUpper(word)) // upper case word
+		}
+		if strings.Title(word) == word { // title case
+			addwd = append(addwd, strings.ToUpper(word)) // upper case word
+		}
+	}
+	wd = append(wd, addwd...)
 	return wd
 }
 
@@ -3418,6 +3826,7 @@ func doparams() params {
 var runStartTime time.Time
 
 func main() {
+
 	loc, _ := time.LoadLocation("America/Denver")
 	runStartTime = time.Now()
 	pptr = append(pptr, strings.Repeat("*", 80))
@@ -3426,7 +3835,17 @@ func main() {
 	pptr = append(pptr, strings.Repeat("*", 80))
 	pptr = append(pptr, fmt.Sprintf("☲pptext version: %s", VERSION))
 
-	p = doparams()            // parse command line parameters
+	p = doparams() // parse command line parameters
+
+	f, _ := os.Create(p.Outdir + "/runlog.txt")
+	f.WriteString("started: " + time.Now().In(loc).Format(time.RFC850) + "\n")
+	f.WriteString(fmt.Sprintf("command line: %s\n", os.Args))
+	f.Close()
+
+	if strings.Contains(p.Infile, "__") {
+		p.Experimental = true
+	}
+
 	wbuf = readText(p.Infile) // working buffer from user source file, line by line
 
 	// location of executable and user's working directory
@@ -3525,12 +3944,28 @@ func main() {
 	// prettyPrint(wordListMapLines)
 	// prettyPrint(goodWordlist)
 
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "1", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
+
 	/*************************************************************************/
 	/* smart quote checks place separate report in scanreport.txt            */
 	/*************************************************************************/
 
 	t := puncScan()
 	pptr = append(pptr, t...)
+
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "2", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 
 	/*************************************************************************/
 	/* spellcheck (using aspell)                                             */
@@ -3540,6 +3975,14 @@ func main() {
 	sw, okwords, t = aspellCheck()
 	pptr = append(pptr, t...)
 
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "3", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
+
 	/*************************************************************************/
 	/* Levenshtein check                                                     */
 	/* compares all suspect words to all okwords in text                     */
@@ -3548,12 +3991,28 @@ func main() {
 	t = levencheck(sw)
 	pptr = append(pptr, t...)
 
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
+
 	/*************************************************************************/
 	/* individual text checks                                                */
 	/*************************************************************************/
 
 	t = textCheck()
 	pptr = append(pptr, t...)
+
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "5", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 
 	/*************************************************************************/
 	/* Jeebies check                                                         */
@@ -3562,6 +4021,14 @@ func main() {
 
 	t = jeebies()
 	pptr = append(pptr, t...)
+
+	if p.Experimental {
+		t2 := time.Now()
+		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "6", t2.Sub(runStartTime).Seconds())
+		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(s + "\n")
+		f.Close()
+	}
 
 	// note: remaining words in sw are suspects.
 	// they could be used to start a user-maintained persistent good word list
