@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -30,7 +31,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.03.24"
+const VERSION string = "2019.03.28"
 
 var sw []string      // suspect words list
 var rs []string      // array of strings for local aggregation
@@ -730,21 +731,11 @@ func puncScan() []string {
 		}
 	}
 
-	// debug file. developer only
-	f2, err := os.Create(p.Outdir + "/testsnap.txt")
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, u := range lwbuf {
-		fmt.Fprintf(f2, "%s\n", u)
-	}
-	f2.Close()
-
 	if !anyreport {
 		prs = append(prs, "no punctuation scan suspects reported")
 		rs = append(rs, "Punctuation Scan: no suspects reported")
 	} else {
-		f2, err = os.Create(p.Outdir + "/scanreport.txt")
+		f2, err := os.Create(p.Outdir + "/scanreport.txt")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -1136,25 +1127,32 @@ func tcHypConsistency(wb []string) []string {
 					// found it. report it
 					count++
 					rs = append(rs, fmt.Sprintf("%s (%d) ❬-❭ %s (%d)", s2, wordListMapCount[s2], s, wordListMapCount[s]))
-					sdone, s2done := false, false
-					for n, line := range wb {
-						re1 := regexp.MustCompile(`(\P{L}` + s + `\P{L})`)
-						if !sdone && re1.MatchString(" "+line+" ") {
-							line = re1.ReplaceAllString(" "+line+" ", `☰$1☷`)
-							rs = append(rs, fmt.Sprintf("%6d: %s", n+1, strings.TrimSpace(line))) // 1-based
-							sdone = true
-						}
-						re2 := regexp.MustCompile(`(\P{L}` + s2 + `\P{L})`)
-						if !s2done && re2.MatchString(" "+line+" ") {
-							line = re2.ReplaceAllString(" "+line+" ", `☰$1☷`)
-							rs = append(rs, fmt.Sprintf("%6d: %s", n+1, strings.TrimSpace(line))) // 1-based
-							s2done = true
-						}
-						if sdone && s2done {
-							rs = append(rs, "")
-							reported = true
+					where_s := strings.Split(wordListMapLines[s], ",")
+					where_s2 := strings.Split(wordListMapLines[s2], ",")
+					re1 := regexp.MustCompile(`(\P{L}` + s + `\P{L})`)
+					where_s_count := 0
+					for _, n := range where_s {
+						ni, _ := strconv.ParseInt(n, 10, 64)
+						line := wb[ni-1]
+						line = re1.ReplaceAllString(" "+line+" ", `☰$1☷`)
+						rs = append(rs, fmt.Sprintf("%6d: %s", ni, strings.TrimSpace(line)))
+						where_s_count++
+						if where_s_count == 4 {
 							break
 						}
+					}
+					re2 := regexp.MustCompile(`(\P{L}` + s2 + `\P{L})`)
+					where_s2_count := 0
+					for _, n := range where_s2 {
+						ni, _ := strconv.ParseInt(n, 10, 64)
+						line := wb[ni-1]
+						line = re2.ReplaceAllString(" "+line+" ", `☰$1☷`)
+						rs = append(rs, fmt.Sprintf("%6d: %s", ni, strings.TrimSpace(line)))
+						where_s2_count++
+						if where_s2_count == 4 {
+							break
+						}
+
 					}
 				}
 			}
@@ -1251,7 +1249,7 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 						}
 						if _, ok := wreported[hpair[0]]; !ok {
 							rs = append(rs, fmt.Sprintf("\"%s-%s\" (%d) ❬-❭ \"%s %s\" (%d)",
-								hpair[0], hpair[1], count1, hpairlow[0], hpairlow[1], count2))
+								hpair[0], hpair[1], count2, hpairlow[0], hpairlow[1], count1))
 							if p.Verbose {
 								rs = append(rs, acc1...)
 								rs = append(rs, acc2...)
@@ -2945,149 +2943,23 @@ func textCheck() []string {
 	rs = append(rs, fmt.Sprintf("* %-76s *", "TEXT ANALYSIS REPORT"))
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
 	rs = append(rs, "")
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4a", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcHypConsistency(wbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4b", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcHypSpaceConsistency(wbuf, pbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4c", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcAsteriskCheck(wbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4d", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcAdjacentSpaces(wbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4e", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcTrailingSpaces(wbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4f", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcLetterChecks(wbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4g", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcSpacingCheck(wbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4h", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcShortLines(wbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4i", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcLongLines(wbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4j", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcRepeatedWords(pbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4k", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcEllipsisCheck(wbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4l", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcDashCheck(wbuf, pbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4m", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, scannoCheck(wbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4n", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcCurlyQuoteCheck(wbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4o", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcGutChecks(wbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4p", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcBookLevel(wbuf)...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4q", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 	rs = append(rs, tcParaLevel()...)
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4r", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 
 	if tcec == 0 { // test check error count
 		rs[0] = "☲" + rs[0] // style dim
@@ -3119,9 +2991,11 @@ okabbrev = ("cent", "cents", "viz", "vol", "vols", "vid", "ed", "al", "etc",
 */
 
 func getWordList(wb []string) (map[string]int, map[string]string) {
+
 	f := func(c rune) bool {
 		return !unicode.IsLetter(c) && !unicode.IsNumber(c) && c != '-'
 	}
+
 	m := make(map[string]int)     // map to hold words, counts
 	ml := make(map[string]string) // map to hold words, lines
 
@@ -3134,6 +3008,11 @@ func getWordList(wb []string) (map[string]int, map[string]string) {
 		element = re1.ReplaceAllString(element, `${1}①${2}`)
 		element = re2.ReplaceAllString(element, `${1}②${2}`)
 		element = re2.ReplaceAllString(element, `${1}②${2}`)
+
+		// if the user is using "--" as a "—", convert that
+		// temporarily to a space so it can be a word separator
+		element = strings.Replace(element, "--", " ", -1)
+
 		// all words with special characters are protected
 		// split into words
 		t := (strings.FieldsFunc(element, f))
@@ -3833,35 +3712,23 @@ func main() {
 	pptr = append(pptr, fmt.Sprintf("* %-76s *", "PPTEXT RUN REPORT"))
 	pptr = append(pptr, fmt.Sprintf("* %76s *", "started "+time.Now().In(loc).Format(time.RFC850)))
 	pptr = append(pptr, strings.Repeat("*", 80))
-	pptr = append(pptr, fmt.Sprintf("☲pptext version: %s", VERSION))
 
 	p = doparams() // parse command line parameters
+
+	pptr = append(pptr, fmt.Sprintf("☲text source: %s", path.Base(p.Infile)))
+	pptr = append(pptr, fmt.Sprintf("☲pptext version: %s", VERSION))
 
 	f, _ := os.Create(p.Outdir + "/runlog.txt")
 	f.WriteString("started: " + time.Now().In(loc).Format(time.RFC850) + "\n")
 	f.WriteString(fmt.Sprintf("command line: %s\n", os.Args))
 	f.Close()
 
-	if strings.Contains(p.Infile, "__") {
-		p.Experimental = true
-	}
-
 	wbuf = readText(p.Infile) // working buffer from user source file, line by line
 
 	// location of executable and user's working directory
 	execut, _ := os.Executable()
 	loc_exec := filepath.Dir(execut) // i.e. /home/rfrank/go/src/pptext
-	loc_proj, _ := os.Getwd()        // i.e. /home/rfrank/projects/books/hiking-westward
-
-	// if executable is on rfrank.io server, do not expose internal directories
-	if !strings.Contains(loc_exec, "www") {
-		pptr = append(pptr, fmt.Sprintf("command line: %s", os.Args))
-		pptr = append(pptr, fmt.Sprintf("executable is in: %s", loc_exec))
-		pptr = append(pptr, fmt.Sprintf("project is in: %s", loc_proj))
-	} else {
-		_, file := filepath.Split(p.Infile)
-		pptr = append(pptr, fmt.Sprintf("processing file: %s", file))
-	}
+	// loc_proj, _ := os.Getwd()     // i.e. /home/rfrank/projects/books/hiking-westward
 
 	// report status of verbose flag.
 	onoff := "off"
@@ -3944,28 +3811,12 @@ func main() {
 	// prettyPrint(wordListMapLines)
 	// prettyPrint(goodWordlist)
 
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "1", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
-
 	/*************************************************************************/
 	/* smart quote checks place separate report in scanreport.txt            */
 	/*************************************************************************/
 
 	t := puncScan()
 	pptr = append(pptr, t...)
-
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "2", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 
 	/*************************************************************************/
 	/* spellcheck (using aspell)                                             */
@@ -3975,14 +3826,6 @@ func main() {
 	sw, okwords, t = aspellCheck()
 	pptr = append(pptr, t...)
 
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "3", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
-
 	/*************************************************************************/
 	/* Levenshtein check                                                     */
 	/* compares all suspect words to all okwords in text                     */
@@ -3991,28 +3834,12 @@ func main() {
 	t = levencheck(sw)
 	pptr = append(pptr, t...)
 
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "4", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
-
 	/*************************************************************************/
 	/* individual text checks                                                */
 	/*************************************************************************/
 
 	t = textCheck()
 	pptr = append(pptr, t...)
-
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "5", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 
 	/*************************************************************************/
 	/* Jeebies check                                                         */
@@ -4021,14 +3848,6 @@ func main() {
 
 	t = jeebies()
 	pptr = append(pptr, t...)
-
-	if p.Experimental {
-		t2 := time.Now()
-		s := fmt.Sprintf("checkpoint %s: %.2f seconds", "6", t2.Sub(runStartTime).Seconds())
-		f, _ := os.OpenFile(p.Outdir+"/runlog.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(s + "\n")
-		f.Close()
-	}
 
 	// note: remaining words in sw are suspects.
 	// they could be used to start a user-maintained persistent good word list

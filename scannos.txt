@@ -24,6 +24,7 @@ cat
 cheek
 clay
 coining
+com
 comer
 die
 docs
@@ -52,6 +53,7 @@ tile
 tiling
 tinder
 tip
+tom
 tor
 tram
 tune
