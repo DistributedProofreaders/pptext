@@ -3715,8 +3715,8 @@ func main() {
 
 	p = doparams() // parse command line parameters
 
-	pptr = append(pptr, fmt.Sprintf("☲text source: %s", path.Base(p.Infile)))
-	pptr = append(pptr, fmt.Sprintf("☲pptext version: %s", VERSION))
+	pptr = append(pptr, fmt.Sprintf("☲processing file: %s", path.Base(p.Infile)))
+	pptr = append(pptr, fmt.Sprintf("pptext version: %s", VERSION))
 
 	f, _ := os.Create(p.Outdir + "/runlog.txt")
 	f.WriteString("started: " + time.Now().In(loc).Format(time.RFC850) + "\n")

@@ -3,6 +3,7 @@ ail
 arc
 arid
 bad
+bade
 ball
 band
 bar
