@@ -13,7 +13,7 @@ https://golang.org/pkg/regexp/syntax/
 /*
 2019.04.10a "show word in context" incorporates Verbose flag
              adds "-----" separator in edit distance checks
-
+2019.04.10b case-insensitive Mr/Mr. (&c.) checks
 */
 
 package main
@@ -37,7 +37,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.04.10a"
+const VERSION string = "2019.04.10b"
 
 var sw []string      // suspect words list
 var rs []string      // array of strings for local aggregation
@@ -2188,12 +2188,12 @@ func tcBookLevel(wb []string) []string {
 
 	// ----- check American and British title punctuation mixed -----
 
-	re01 = regexp.MustCompile(`Mr\.`)
-	re02 = regexp.MustCompile(`Mr\s`)
-	re03 = regexp.MustCompile(`Mrs\.`)
-	re04 = regexp.MustCompile(`Mrs\s`)
-	re05 = regexp.MustCompile(`Dr\.`)
-	re06 = regexp.MustCompile(`Dr\s`)
+	re01 = regexp.MustCompile(`(?i)Mr\.`)
+	re02 = regexp.MustCompile(`(?i)Mr\s`)
+	re03 = regexp.MustCompile(`(?i)Mrs\.`)
+	re04 = regexp.MustCompile(`(?i)Mrs\s`)
+	re05 = regexp.MustCompile(`(?i)Dr\.`)
+	re06 = regexp.MustCompile(`(?i)Dr\s`)
 
 	count_mr_period, count_mr_space, count_mrs_period, count_mrs_space, count_dr_period, count_dr_space := 0, 0, 0, 0, 0, 0
 	for _, line := range wb {
