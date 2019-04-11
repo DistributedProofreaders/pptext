@@ -10,6 +10,12 @@ https://golang.org/pkg/unicode/#pkg-constants
 https://golang.org/pkg/regexp/syntax/
 */
 
+/*
+2019.04.10a "show word in context" incorporates Verbose flag
+             adds "-----" separator in edit distance checks
+
+*/
+
 package main
 
 import (
@@ -20,8 +26,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -31,7 +37,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.03.28"
+const VERSION string = "2019.04.10a"
 
 var sw []string      // suspect words list
 var rs []string      // array of strings for local aggregation
@@ -886,7 +892,8 @@ func aspellCheck() ([]string, []string, []string) {
 		// if word occurs 5 or more times, accept it
 		if wordListMapCount[strings.ToLower(t)]+
 			wordListMapCount[strings.Title(strings.ToLower(t))]+
-			wordListMapCount[strings.ToUpper(t)] >= 5 {
+			wordListMapCount[strings.ToUpper(t)]+
+			wordListMapCount[t] >= 5 {
 			suspect_words = append(suspect_words[:i], suspect_words[i+1:]...)
 			i--
 			continue
@@ -1247,6 +1254,8 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 								acc2 = append(acc2, fmt.Sprintf("%6d: %s", i+1, wb[i]))
 							}
 						}
+
+
 						if _, ok := wreported[hpair[0]]; !ok {
 							rs = append(rs, fmt.Sprintf("\"%s-%s\" (%d) ❬-❭ \"%s %s\" (%d)",
 								hpair[0], hpair[1], count2, hpairlow[0], hpairlow[1], count1))
@@ -1260,6 +1269,7 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 							wreported[hpair[0]] = 1
 							count++
 						}
+
 					}
 				}
 			}
@@ -3138,7 +3148,7 @@ func showWordInContext(word string) []string {
 				line = getParaSegment(line, loc[0])
 				rs = append(rs, fmt.Sprintf("  %6d: %s", where, line)) // 1-based
 			}
-			if reported > 1 && len(theLines) > 2 {
+			if !p.Verbose && reported > 1 && len(theLines) > 2 {
 				rs = append(rs, fmt.Sprintf("  ...%6d more", len(theLines)-2))
 				break
 			}
@@ -3202,6 +3212,8 @@ func levencheck(suspects []string) []string {
 	reportd = make(map[string]int)
 
 	re31 := regexp.MustCompile(`[a-zA-Z0-9’]`)
+	var levreported map[string]int
+	levreported = make(map[string]int)
 	// for each suspect word, check against all words.
 	for _, suspect := range suspects {
 		suspectlc := strings.ToLower(suspect)
@@ -3262,14 +3274,22 @@ func levencheck(suspects []string) []string {
 				suspectlc := strings.Replace(suspectlc, "o𝚎", "œ", -1)
 				suspectlc = strings.Replace(suspectlc, "a𝚎", "æ", -1)
 
-				rs = append(rs, fmt.Sprintf("%s(%d):%s(%d)", suspectlc, countsuspect,
-					testwordlc, counttestword))
-				nreports++
+				// report if not already reported
+				if _, ok := levreported[suspect+":"+testword]; !ok {
+					rs = append(rs, fmt.Sprintf("%s(%d):%s(%d)", suspectlc, countsuspect,
+						testwordlc, counttestword))
+					nreports++
 
-				rs = append(rs, showWordInContext(testword)...)
-				rs = append(rs, showWordInContext(suspect)...)
+					rs = append(rs, showWordInContext(testword)...)
+					rs = append(rs, "          ----")
+					rs = append(rs, showWordInContext(suspect)...)
 
-				rs = append(rs, "")
+					// remember this pair and do not report again
+					// check above will be for these words in reverse
+					levreported[testword+":"+suspect] = 1
+					rs = append(rs, "")
+				}
+
 				reportd[testwordlc] = 1
 				reportd[suspectlc] = 1
 			}
