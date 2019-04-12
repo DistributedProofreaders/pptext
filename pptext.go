@@ -14,6 +14,8 @@ https://golang.org/pkg/regexp/syntax/
 2019.04.10a "show word in context" incorporates Verbose flag
              adds "-----" separator in edit distance checks
 2019.04.10b case-insensitive Mr/Mr. (&c.) checks
+2019.04.11  hyphenation and spaced pair check boundary code
+2019.04.12  hyp/non hyp blocked in edit distance checks
 */
 
 package main
@@ -37,7 +39,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.04.10b"
+const VERSION string = "2019.04.11"
 
 var sw []string      // suspect words list
 var rs []string      // array of strings for local aggregation
@@ -194,6 +196,7 @@ type params struct {
 	Nolev        bool
 	Nosqc        bool
 	Verbose      bool
+	Revision	 bool
 }
 
 var p params
@@ -1221,37 +1224,58 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 					} else {
 						tmpline = wb[iline-1]
 					}
-					re001 := regexp.MustCompile("(?i)" + hpairlow[0] + " " + hpairlow[1])
+					t := `(?i)(^|\P{L})` + hpairlow[0] + " " + hpairlow[1] + `(\P{L}|$)`
+					re001 := regexp.MustCompile(t)
 					where := re001.FindAllString(tmpline, -1)
 					if where != nil {
 						count1 := 0
 						count2 := 0
 						acc1 := []string{}
 						acc2 := []string{}
-						re002 := regexp.MustCompile("(?i)" + hpairlow[0] + " " + hpairlow[1])
-						re003 := regexp.MustCompile("(?i)" + hpairlow[0] + "$")
-						re004 := regexp.MustCompile("(?i)" + "^" + hpairlow[1])
-						re005 := regexp.MustCompile("(?i)" + hpairlow[0] + "-" + hpairlow[1])
+
+						// words separated by a space
+						re002 := regexp.MustCompile(`(?i)(?P<1W>^|\P{L})(?P<2W>` + hpairlow[0] + " " + hpairlow[1] + `)(?P<3W>\P{L}|$)`)
+						// words separated by newline (equivalent to a space)
+						re003 := regexp.MustCompile(`(?i)(?P<1W>^|\P{L})(?P<2W>` + hpairlow[0] + `)$`)
+						re004 := regexp.MustCompile(`(?i)^(?P<2W>` + hpairlow[1] + `)(?P<3W>\P{L}|$)`)
+						// words spearated by a hyphen
+						re005 := regexp.MustCompile(`(?i)(?P<1W>^|\P{L})(?P<2W>` + hpairlow[0] + "-" + hpairlow[1]  + `)(?P<3W>\P{L}|$)`)
+
 						for i, _ := range wb {
-							// count word space word or word newline word
+
+							// count word space word
 							where := re002.FindAllString(wb[i], -1)
 							if where != nil {
 								count1++
-								acc1 = append(acc1, fmt.Sprintf("%6d: %s", i+1, wb[i]))
+								re002a := regexp.MustCompile(`(` + where[0] + `)`)
+								t = re002a.ReplaceAllString(wb[i], `☰${1}☷`)								
+								acc1 = append(acc1, fmt.Sprintf("%6d: %s", i+1, t))
 							}
+
+							// count word newline word
 							if i < len(wb)-1 {
+								// this line
 								where2 := re003.FindAllString(wb[i], -1)
+								// next line
 								where3 := re004.FindAllString(wb[i+1], -1)
 								if where2 != nil && where3 != nil {
 									count1++
-									acc1 = append(acc1, fmt.Sprintf("%6d: %s", i+1, wb[i]))
+									re003a := regexp.MustCompile(`(` + where2[0] + `)`)
+									t = re003a.ReplaceAllString(wb[i], `☰${1}☷`)
+									acc1 = append(acc1, fmt.Sprintf("%6d: %s", i+1, t))
+									re004a := regexp.MustCompile(`(` + where3[0] + `)`)
+									t = re004a.ReplaceAllString(wb[i+1], `☰${1}☷`)
+									acc1 = append(acc1, fmt.Sprintf("        %s", t))
 								}
 							}
+
 							// count word hyphen word
 							where4 := re005.FindAllString(wb[i], -1)
 							if where4 != nil {
 								count2++
-								acc2 = append(acc2, fmt.Sprintf("%6d: %s", i+1, wb[i]))
+								re005a := regexp.MustCompile(`(` + where4[0] + `)`)
+								t = re005a.ReplaceAllString(wb[i], `☰${1}☷`)
+								acc2 = append(acc2, fmt.Sprintf("%6d: %s", i+1, t))
 							}
 						}
 
@@ -1260,11 +1284,13 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 							rs = append(rs, fmt.Sprintf("\"%s-%s\" (%d) ❬-❭ \"%s %s\" (%d)",
 								hpair[0], hpair[1], count2, hpairlow[0], hpairlow[1], count1))
 							if p.Verbose {
-								rs = append(rs, acc1...)
 								rs = append(rs, acc2...)
+								rs = append(rs, "        -----")
+								rs = append(rs, acc1...)
 							} else {
-								rs = append(rs, acc1[0])
 								rs = append(rs, acc2[0])
+								rs = append(rs, "        -----")
+								rs = append(rs, acc1[0])
 							}
 							wreported[hpair[0]] = 1
 							count++
@@ -3259,6 +3285,12 @@ func levencheck(suspects []string) []string {
 				continue
 			}
 
+			// differ by only hyphenation
+			if strings.Replace(suspectlc,"-","",-1) == strings.Replace(testwordlc,"-","",-1) {
+				fmt.Println(suspectlc, testwordlc)
+				continue
+			}
+
 			// calculate distance (case insensitive)
 			dist := levenshtein([]rune(suspectlc), []rune(testwordlc))
 
@@ -3715,6 +3747,7 @@ func doparams() params {
 	flag.BoolVar(&p.Nolev, "d", false, "do not run Levenshtein distance tests")
 	flag.BoolVar(&p.Nosqc, "q", false, "do not run smart quote checks")
 	flag.BoolVar(&p.Verbose, "v", false, "Verbose operation")
+	flag.BoolVar(&p.Revision, "r", false, "return Revision number")
 	flag.Parse()
 	return p
 }
@@ -3734,6 +3767,11 @@ func main() {
 	pptr = append(pptr, strings.Repeat("*", 80))
 
 	p = doparams() // parse command line parameters
+
+	if p.Revision {
+		fmt.Println(VERSION)
+		return
+	}
 
 	pptr = append(pptr, fmt.Sprintf("☲processing file: %s", path.Base(p.Infile)))
 	pptr = append(pptr, fmt.Sprintf("pptext version: %s", VERSION))
