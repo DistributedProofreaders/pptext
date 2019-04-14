@@ -16,6 +16,7 @@ https://golang.org/pkg/regexp/syntax/
 2019.04.10b case-insensitive Mr/Mr. (&c.) checks
 2019.04.11  hyphenation and spaced pair check boundary code
 2019.04.12  hyp/non hyp blocked in edit distance checks
+2019.04.14  bugfix: tcHypSpaceConsistency needed FindAllStringSubmatch
 */
 
 package main
@@ -39,7 +40,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.04.11"
+const VERSION string = "2019.04.14"
 
 var sw []string      // suspect words list
 var rs []string      // array of strings for local aggregation
@@ -1244,10 +1245,10 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 						for i, _ := range wb {
 
 							// count word space word
-							where := re002.FindAllString(wb[i], -1)
+							where := re002.FindAllStringSubmatch(wb[i], -1)
 							if where != nil {
 								count1++
-								re002a := regexp.MustCompile(`(` + where[0] + `)`)
+								re002a := regexp.MustCompile(`(` + where[0][2] + `)`)
 								t = re002a.ReplaceAllString(wb[i], `☰${1}☷`)								
 								acc1 = append(acc1, fmt.Sprintf("%6d: %s", i+1, t))
 							}
@@ -1255,25 +1256,25 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 							// count word newline word
 							if i < len(wb)-1 {
 								// this line
-								where2 := re003.FindAllString(wb[i], -1)
+								where2 := re003.FindAllStringSubmatch(wb[i], -1)
 								// next line
-								where3 := re004.FindAllString(wb[i+1], -1)
+								where3 := re004.FindAllStringSubmatch(wb[i+1], -1)
 								if where2 != nil && where3 != nil {
 									count1++
-									re003a := regexp.MustCompile(`(` + where2[0] + `)`)
+									re003a := regexp.MustCompile(`(` + where2[0][2] + `)`)
 									t = re003a.ReplaceAllString(wb[i], `☰${1}☷`)
 									acc1 = append(acc1, fmt.Sprintf("%6d: %s", i+1, t))
-									re004a := regexp.MustCompile(`(` + where3[0] + `)`)
+									re004a := regexp.MustCompile(`(` + where3[0][2] + `)`)
 									t = re004a.ReplaceAllString(wb[i+1], `☰${1}☷`)
 									acc1 = append(acc1, fmt.Sprintf("        %s", t))
 								}
 							}
 
 							// count word hyphen word
-							where4 := re005.FindAllString(wb[i], -1)
+							where4 := re005.FindAllStringSubmatch(wb[i], -1)
 							if where4 != nil {
 								count2++
-								re005a := regexp.MustCompile(`(` + where4[0] + `)`)
+								re005a := regexp.MustCompile(`(` + where4[0][2] + `)`)
 								t = re005a.ReplaceAllString(wb[i], `☰${1}☷`)
 								acc2 = append(acc2, fmt.Sprintf("%6d: %s", i+1, t))
 							}
