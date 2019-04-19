@@ -5,18 +5,14 @@ license:   GPL
 */
 
 /*
-developer reference:
-https://golang.org/pkg/unicode/#pkg-constants
-https://golang.org/pkg/regexp/syntax/
-*/
-
-/*
 2019.04.10a "show word in context" incorporates Verbose flag
-             adds "-----" separator in edit distance checks
+            adds "-----" separator in edit distance checks
 2019.04.10b case-insensitive Mr/Mr. (&c.) checks
 2019.04.11  hyphenation and spaced pair check boundary code
 2019.04.12  hyp/non hyp blocked in edit distance checks
-2019.04.14  bugfix: tcHypSpaceConsistency needed FindAllStringSubmatch
+2019.04.14a bugfix: tcHypSpaceConsistency needed FindAllStringSubmatch
+2019.04.16  adds timing and expensive check flag (borrowing -x)
+2019.04.18  add minor divider in hyphenation and non-hyphenated check
 */
 
 package main
@@ -40,7 +36,8 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.04.14"
+const VERSION string = "2019.04.16"
+const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
 var rs []string      // array of strings for local aggregation
@@ -1152,6 +1149,7 @@ func tcHypConsistency(wb []string) []string {
 							break
 						}
 					}
+					rs = append(rs, "        -----")
 					re2 := regexp.MustCompile(`(\P{L}` + s2 + `\P{L})`)
 					where_s2_count := 0
 					for _, n := range where_s2 {
@@ -1191,6 +1189,7 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 	rs = append(rs, "")
 	count := 0
 
+	re70 := regexp.MustCompile(`\p{P}`)  // punctuation
 	for wstr := range wordListMapCount {
 		if strings.Contains(wstr, "-") {
 			// split into two words into hpair (hyphenation pair)
@@ -1203,6 +1202,9 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 			}
 			// both words lower case for compare
 			hpairlow := []string{strings.ToLower(hpair[0]), strings.ToLower(hpair[1])}
+			// ensure there is no punctuation in there
+			hpairlow[0] = re70.ReplaceAllString(hpairlow[0], "")
+			hpairlow[1] = re70.ReplaceAllString(hpairlow[1], "")
 			// look for first word in text
 			s := wordListMapLines[hpairlow[0]]
 			s += "," + wordListMapLines[strings.Title(hpairlow[0])]
@@ -1264,7 +1266,7 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 									re003a := regexp.MustCompile(`(` + where2[0][2] + `)`)
 									t = re003a.ReplaceAllString(wb[i], `☰${1}☷`)
 									acc1 = append(acc1, fmt.Sprintf("%6d: %s", i+1, t))
-									re004a := regexp.MustCompile(`(` + where3[0][2] + `)`)
+									re004a := regexp.MustCompile(`(` + where3[0][1] + `)`)
 									t = re004a.ReplaceAllString(wb[i+1], `☰${1}☷`)
 									acc1 = append(acc1, fmt.Sprintf("        %s", t))
 								}
@@ -2980,23 +2982,80 @@ func textCheck() []string {
 	rs = append(rs, fmt.Sprintf("* %-76s *", "TEXT ANALYSIS REPORT"))
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
 	rs = append(rs, "")
+
+	start := time.Now()
 	rs = append(rs, tcHypConsistency(wbuf)...)
-	rs = append(rs, tcHypSpaceConsistency(wbuf, pbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcHypConsistency", time.Since(start)) }
+
+	if !p.Experimental {	
+		start = time.Now()
+		rs = append(rs, tcHypSpaceConsistency(wbuf, pbuf)...)
+		if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcHypSpaceConsistency", time.Since(start)) }
+	} else {
+		rs = append(rs, "☲----- hyphen-space consistency check ------------------------------------------")
+		rs = append(rs, "")
+		rs = append(rs, "skipped (time-expensive test)☷")
+	}
+
+	start = time.Now()
 	rs = append(rs, tcAsteriskCheck(wbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcAsteriskCheck", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, tcAdjacentSpaces(wbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcAdjacentSpaces", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, tcTrailingSpaces(wbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcTrailingSpaces", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, tcLetterChecks(wbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcLetterChecks", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, tcSpacingCheck(wbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcSpacingCheck", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, tcShortLines(wbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcShortLines", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, tcLongLines(wbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcLongLines", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, tcRepeatedWords(pbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcRepeatedWords", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, tcEllipsisCheck(wbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcEllipsisCheck", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, tcDashCheck(wbuf, pbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcDashCheck", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, scannoCheck(wbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  scannoCheck", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, tcCurlyQuoteCheck(wbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcCurlyQuoteCheck", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, tcGutChecks(wbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcGutChecks", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, tcBookLevel(wbuf)...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcBookLevel", time.Since(start)) }
+
+	start = time.Now()
 	rs = append(rs, tcParaLevel()...)
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcParaLevel", time.Since(start)) }
 
 	if tcec == 0 { // test check error count
 		rs[0] = "☲" + rs[0] // style dim
@@ -3288,7 +3347,6 @@ func levencheck(suspects []string) []string {
 
 			// differ by only hyphenation
 			if strings.Replace(suspectlc,"-","",-1) == strings.Replace(testwordlc,"-","",-1) {
-				fmt.Println(suspectlc, testwordlc)
 				continue
 			}
 
@@ -3609,7 +3667,7 @@ func jeebies() []string {
 	*/
 
 	if nreports == 0 {
-		rs = append(rs, "no jeebies checks reported")
+		rs = append(rs, "jeebies found no errors")
 		rs[1] = "☲" + string([]rune(rs[1])[1:]) // switch to dim
 	}
 	rs = append(rs, "☷") // and close out dim or black if reports
@@ -3874,7 +3932,12 @@ func main() {
 	/* smart quote checks place separate report in scanreport.txt            */
 	/*************************************************************************/
 
+	start := time.Now()
 	t := puncScan()
+	if SHOWTIMING {
+		fmt.Printf("%s took %v\n", "puncScan", time.Since(start))
+	}
+
 	pptr = append(pptr, t...)
 
 	/*************************************************************************/
@@ -3882,31 +3945,47 @@ func main() {
 	/* returns suspect words, okwords, report                                */
 	/*************************************************************************/
 
+	start = time.Now()
 	sw, okwords, t = aspellCheck()
 	pptr = append(pptr, t...)
+	if SHOWTIMING {
+		fmt.Printf("%s took %v\n", "aspellCheck", time.Since(start))
+	}
 
 	/*************************************************************************/
 	/* Levenshtein check                                                     */
 	/* compares all suspect words to all okwords in text                     */
 	/*************************************************************************/
 
+	start = time.Now()
 	t = levencheck(sw)
 	pptr = append(pptr, t...)
+	if SHOWTIMING {
+		fmt.Printf("%s took %v\n", "levencheck", time.Since(start))
+	}
 
 	/*************************************************************************/
 	/* individual text checks                                                */
 	/*************************************************************************/
 
+	start = time.Now()
 	t = textCheck()
 	pptr = append(pptr, t...)
+	if SHOWTIMING {
+		fmt.Printf("%s took %v\n", "textCheck", time.Since(start))
+	}
 
 	/*************************************************************************/
 	/* Jeebies check                                                         */
 	/* jeebies looks for he/be errors                                        */
 	/*************************************************************************/
 
+	start = time.Now()
 	t = jeebies()
 	pptr = append(pptr, t...)
+		if SHOWTIMING {
+		fmt.Printf("%s took %v\n", "jeebies", time.Since(start))
+	}
 
 	// note: remaining words in sw are suspects.
 	// they could be used to start a user-maintained persistent good word list
