@@ -13,6 +13,8 @@ license:   GPL
 2019.04.14a bugfix: tcHypSpaceConsistency needed FindAllStringSubmatch
 2019.04.16  adds timing and expensive check flag (borrowing -x)
 2019.04.18  add minor divider in hyphenation and non-hyphenated check
+2019.04.21  adds ability to skip spell-check (which also kills edit-distance)
+2019.04.21a curly quote check itemize suspects; ditto special situation checks
 */
 
 package main
@@ -36,7 +38,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.04.16"
+const VERSION string = "2019.04.21a"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -193,6 +195,7 @@ type params struct {
 	Experimental bool
 	Nolev        bool
 	Nosqc        bool
+	Nospell		 bool
 	Verbose      bool
 	Revision	 bool
 }
@@ -786,6 +789,18 @@ func Intersection(a, b []string) (c []string) {
 
 func aspellCheck() ([]string, []string, []string) {
 
+	var sw []string // suspect words
+	okwords := make(map[string]int, len(wordListMapCount))
+	okslice := []string{}
+
+	if p.Nospell {
+		rs = append(rs, "☲"+strings.Repeat("*", 80))
+		rs = append(rs, fmt.Sprintf("* %-76s *", "Spellcheck disabled by user"))
+		rs = append(rs, strings.Repeat("*", 80)+"☷")
+		rs = append(rs, "")
+		return sw, okslice, rs
+	}	
+
 	rs := []string{} // empty rs to start aggregation
 	rs = append(rs, "☳<a name='spell'></a>")
 
@@ -800,7 +815,6 @@ func aspellCheck() ([]string, []string, []string) {
 	// are good words that will be used later, as in the Levenshtein distance
 	// checks of each suspect word against all good words.
 
-	okwords := make(map[string]int, len(wordListMapCount))
 	for k, v := range wordListMapCount {
 		okwords[k] = v
 	}
@@ -914,7 +928,6 @@ func aspellCheck() ([]string, []string, []string) {
 
 	// show each word in context
 
-	var sw []string // suspect words
 	// lcreported := make(map[string]int) // map to hold downcased words reported
 
 	// rs = append(rs, fmt.Sprintf("Suspect words:"))
@@ -991,7 +1004,6 @@ func aspellCheck() ([]string, []string, []string) {
 	}
 
 	// convert to slice and return
-	okslice := []string{}
 	for s, _ := range okwords {
 		okslice = append(okslice, s)
 	}
@@ -1337,7 +1349,7 @@ func tcCurlyQuoteCheck(wb []string) []string {
 				rs = append(rs, fmt.Sprintf("%s", "floating quote"))
 				ast++
 			}
-			if !p.Verbose && countfq < 5 {
+			if p.Verbose || countfq < 5 {
 				rs = append(rs, fmt.Sprintf("%6d: %s", n+1, wraptext9(line))) // 1=based
 			}
 			countfq++
@@ -1358,10 +1370,10 @@ func tcCurlyQuoteCheck(wb []string) []string {
 				rs = append(rs, fmt.Sprintf("%s", "quote direction"))
 				ast++
 			}
-			if !p.Verbose && countqd < 5 {
+			if p.Verbose || countqd < 5 {
 				rs = append(rs, fmt.Sprintf("%6d: %s", n+1, wraptext9(line))) // 1=based
+				countqd++
 			}
-			countqd++
 		}
 	}
 
@@ -2071,14 +2083,20 @@ func tcLetterChecks(wb []string) []string {
 		}
 		if reportme {
 			reportcount := 0 // count of reports for this particular rune
-			rs = append(rs, fmt.Sprintf("%s", strconv.QuoteRune(kv.Key)))
+			stmp := strconv.QuoteRune(kv.Key)
+			stmp = strings.Replace(stmp, "<", "&lt;", -1)
+			stmp = strings.Replace(stmp, ">", "&gt;", -1)
+			rs = append(rs, fmt.Sprintf("%s", stmp))
 			// rs = append(rs, fmt.Sprintf("%s", kv.Key))
 			count += 1
 			for n, line := range wb {
 				// make exception for "&c"
 				if strings.ContainsRune(line, kv.Key) && !strings.Contains(line, "&c") {
 					if p.Verbose || reportcount < 2 {
+						// highlight suspect character in red
 						line = strings.Replace(line, string(kv.Key), "☰"+string(kv.Key)+"☷", -1)
+						line = strings.Replace(line, "<", "&lt;", -1)
+						line = strings.Replace(line, ">", "&gt;", -1)					
 						rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, line)) // 1=based
 					}
 					reportcount++
@@ -2783,21 +2801,21 @@ func tcGutChecks(wb []string) []string {
 			!re0021d.MatchString(line) &&
 			!re0021e.MatchString(line) &&
 			!re0021f.MatchString(line) {
-			gcreports = append(gcreports, reportln{"mixed letters and numbers in word", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"mixed letters and numbers in word", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 
 		// if re0026.MatchString(line) {
-		//   gcreports = append(gcreports, reportln{"full stop followed by letter", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+		//   gcreports = append(gcreports, reportln{"full stop followed by letter", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		//}
 
 		if re0000.MatchString(line) {
-			gcreports = append(gcreports, reportln{"opening square bracket followed by other than I, G, M, S or number", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"opening square bracket followed by other than I, G, M, S or number", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0001.MatchString(line) {
-			gcreports = append(gcreports, reportln{"punctuation after 'the'", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"punctuation after 'the'", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0002.MatchString(line) {
-			gcreports = append(gcreports, reportln{"punctuation error", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"punctuation error", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		// check each word separately on this line
 		for _, word := range lwl[n] {
@@ -2819,52 +2837,52 @@ func tcGutChecks(wb []string) []string {
 			}
 			if reportme {
 				linetmp := strings.Replace(line, word, fmt.Sprintf("☰%s☷", word), -1)
-				gcreports = append(gcreports, reportln{"mixed case within word", fmt.Sprintf("  %5d: %s", n, wraptext9(linetmp))})
+				gcreports = append(gcreports, reportln{"mixed case within word", fmt.Sprintf("  %5d: %s", n+1, wraptext9(linetmp))})
 			}
 
 			if len(word) > 2 {
 				last2 := word[len(word)-2:]
 				if re0003c.MatchString(last2) {
 					linetmp := strings.Replace(line, word, fmt.Sprintf("☰%s☷", word), -1)
-					gcreports = append(gcreports, reportln{fmt.Sprintf("query word ending with %s", last2), fmt.Sprintf("  %5d: %s", n, wraptext9(linetmp))})
+					gcreports = append(gcreports, reportln{fmt.Sprintf("query word ending with %s", last2), fmt.Sprintf("  %5d: %s", n+1, wraptext9(linetmp))})
 				}
 				first2 := word[:2]
 				if re0003d.MatchString(first2) {
 					linetmp := strings.Replace(line, word, fmt.Sprintf("☰%s☷", word), -1)
-					gcreports = append(gcreports, reportln{fmt.Sprintf("query word starting with %s", first2), fmt.Sprintf("  %5d: %s", n, wraptext9(linetmp))})
+					gcreports = append(gcreports, reportln{fmt.Sprintf("query word starting with %s", first2), fmt.Sprintf("  %5d: %s", n+1, wraptext9(linetmp))})
 				}
 			}
 		}
 		if re0006.MatchString(line) {
-			gcreports = append(gcreports, reportln{"single character line", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"single character line", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0007.MatchString(line) {
-			gcreports = append(gcreports, reportln{"broken hyphenation", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"broken hyphenation", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0008a.MatchString(line) ||
 			re0008b.MatchString(line) ||
 			re0008c.MatchString(line) ||
 			re0008d.MatchString(line) {
-			gcreports = append(gcreports, reportln{"comma spacing", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"comma spacing", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0010.MatchString(line) {
-			gcreports = append(gcreports, reportln{"date format", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"date format", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0011.MatchString(line) {
-			gcreports = append(gcreports, reportln{"I/! check", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"I/! check", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0012.MatchString(line) {
-			gcreports = append(gcreports, reportln{"disjointed contraction", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"disjointed contraction", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0013.MatchString(line) {
-			gcreports = append(gcreports, reportln{"title abbreviation comma", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"title abbreviation comma", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0014.MatchString(line) {
-			gcreports = append(gcreports, reportln{"spaced punctuation", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"spaced punctuation", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0016.MatchString(line) {
 			if abandonedTagCount < 10 {
-				gcreports = append(gcreports, reportln{"abandoned HTML tag", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+				gcreports = append(gcreports, reportln{"abandoned HTML tag", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 			}
 			if abandonedTagCount == 10 {
 				gcreports = append(gcreports, reportln{"abandoned HTML tag", fmt.Sprintf("  %5d: %s", 99999, "...more")})
@@ -2872,13 +2890,13 @@ func tcGutChecks(wb []string) []string {
 			abandonedTagCount++
 		}
 		// if re0017.MatchString(line) {
-		//      gcreports = append(gcreports, reportln{"ellipsis check", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+		//      gcreports = append(gcreports, reportln{"ellipsis check", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		// }
 		if re0018.MatchString(line) {
-			gcreports = append(gcreports, reportln{"quote error (context)", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"quote error (context)", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0019.MatchString(line) {
-			gcreports = append(gcreports, reportln{"standalone 0", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"standalone 0", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0020a.MatchString(line) &&
 			!re0020b.MatchString(line) &&
@@ -2887,46 +2905,46 @@ func tcGutChecks(wb []string) []string {
 			!re0020e.MatchString(line) &&
 			!re0020f.MatchString(line) &&
 			!re0020g.MatchString(line) {
-			gcreports = append(gcreports, reportln{"standalone 1", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"standalone 1", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0022.MatchString(line) {
-			gcreports = append(gcreports, reportln{"trailing space on line", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"trailing space on line", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0023.MatchString(line) {
-			gcreports = append(gcreports, reportln{"abbreviation &c without period", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"abbreviation &c without period", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0024.MatchString(line) {
-			gcreports = append(gcreports, reportln{"line starts with suspect punctuation", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"line starts with suspect punctuation", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re0025.MatchString(line) {
-			gcreports = append(gcreports, reportln{"line that starts with hyphen and then non-hyphen", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"line that starts with hyphen and then non-hyphen", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 
 		// begin non-regexp based
 		if strings.Contains(line, "Blank Page") {
-			gcreports = append(gcreports, reportln{"Blank Page placeholder found", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"Blank Page placeholder found", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if strings.Contains(line, "—-") || strings.Contains(line, "-—") {
-			gcreports = append(gcreports, reportln{"mixed hyphen/dash", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"mixed hyphen/dash", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if strings.Contains(line, "\u00A0") {
-			gcreports = append(gcreports, reportln{"non-breaking space", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"non-breaking space", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if strings.Contains(line, "\u00AD") {
-			gcreports = append(gcreports, reportln{"soft hyphen", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"soft hyphen", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if strings.Contains(line, "\u0009") {
-			gcreports = append(gcreports, reportln{"tab character", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"tab character", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if strings.Contains(line, "&") {
-			gcreports = append(gcreports, reportln{"ampersand character", fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{"ampersand character", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		lcline := strings.ToLower(line)
 		if re_comma.MatchString(lcline) {
-			gcreports = append(gcreports, reportln{fmt.Sprintf("unexpected comma after word"), fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{fmt.Sprintf("unexpected comma after word"), fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 		if re_period.MatchString(lcline) {
-			gcreports = append(gcreports, reportln{fmt.Sprintf("unexpected period after word"), fmt.Sprintf("  %5d: %s", n, wraptext9(line))})
+			gcreports = append(gcreports, reportln{fmt.Sprintf("unexpected period after word"), fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
 		}
 	}
 
@@ -2942,21 +2960,27 @@ func tcGutChecks(wb []string) []string {
 		ctr := 0 // count this report
 		for _, rpt := range gcreports {
 			if rpt.rpt != rrpt_last {
-				if !p.Verbose && ctr > 5 {
-					rs = append(rs, fmt.Sprintf("         ... %d more", ctr-5))
-				}
-				rs = append(rs, fmt.Sprintf("%s\n%s", rpt.rpt, rpt.sourceline)) // first one gets new header line
-				ctr = 1                                                         // one has been reported
+				// a report with a new report type
+				// first one gets new header line
+				rs = append(rs, fmt.Sprintf("%s\n%s", rpt.rpt, rpt.sourceline)) 
+				ctr = 1
+				rrpt_last = rpt.rpt
+				continue
 			} else {
+				// a report with the same report type
+				// handle continuation line
 				s := strings.Replace(rpt.sourceline, "99999: ", "       ", -1)
 				if p.Verbose || ctr < 5 {
 					rs = append(rs, fmt.Sprintf("%s", s)) // subsequent reports
 				}
-				ctr++
+				if !p.Verbose && ctr == 5 {
+					rs = append(rs, fmt.Sprintf("         ... more"))
+				}
+				ctr += 1
 			}
-			rrpt_last = rpt.rpt
 		}
 	}
+
 	if len(gcreports) == 0 {
 		rs = append(rs, "   no special situation reports.")
 		rs[0] = "☲" + rs[0] // style dim
@@ -3259,6 +3283,14 @@ func levencheck(suspects []string) []string {
 	if p.Nolev {
 		rs = append(rs, "☲"+strings.Repeat("*", 80))
 		rs = append(rs, fmt.Sprintf("* %-76s *", "LEVENSHTEIN (EDIT DISTANCE) CHECKS disabled"))
+		rs = append(rs, strings.Repeat("*", 80)+"☷")
+		rs = append(rs, "")
+		return rs
+	}
+
+	if !p.Nolev && p.Nospell {
+		rs = append(rs, "☲"+strings.Repeat("*", 80))
+		rs = append(rs, fmt.Sprintf("* %-76s *", "LEVENSHTEIN (EDIT DISTANCE) CHECKS not available (no previous spellcheck)"))
 		rs = append(rs, strings.Repeat("*", 80)+"☷")
 		rs = append(rs, "")
 		return rs
@@ -3805,6 +3837,7 @@ func doparams() params {
 	flag.BoolVar(&p.Experimental, "x", false, "experimental (developer use)")
 	flag.BoolVar(&p.Nolev, "d", false, "do not run Levenshtein distance tests")
 	flag.BoolVar(&p.Nosqc, "q", false, "do not run smart quote checks")
+	flag.BoolVar(&p.Nospell, "s", false, "do not run spellcheck")
 	flag.BoolVar(&p.Verbose, "v", false, "Verbose operation")
 	flag.BoolVar(&p.Revision, "r", false, "return Revision number")
 	flag.Parse()
