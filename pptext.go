@@ -111,6 +111,13 @@ func contains(s []string, e string) bool {
 	return false
 }
 
+// protect <, >
+func pt(line string) string {
+	line = strings.Replace(line, "<", "&lt;", -1)
+	line = strings.Replace(line, ">", "&gt;", -1)
+	return line
+}
+
 // return true if both straight and curly quotes detected
 //
 func straightCurly(lpb []string) bool {
@@ -196,6 +203,7 @@ type params struct {
 	Nolev        bool
 	Nosqc        bool
 	Nospell		 bool
+	Nojeeb		 bool
 	Verbose      bool
 	Revision	 bool
 }
@@ -962,7 +970,7 @@ func aspellCheck() ([]string, []string, []string) {
 					line = re.ReplaceAllString(line, `$1☰$2☷$3`)
 					loc := re4.FindStringIndex(line) // the start of highlighted word
 					line = getParaSegment(line, loc[0])
-					rs = append(rs, fmt.Sprintf("  %6d: %s", where, line)) // 1-based
+					rs = append(rs, fmt.Sprintf("  %6d: %s", where, pt(line))) // 1-based
 				}
 				if !p.Verbose && reported > 1 && len(theLines) > 2 {
 					rs = append(rs, fmt.Sprintf("  ...%6d more", len(theLines)-2))
@@ -987,7 +995,7 @@ func aspellCheck() ([]string, []string, []string) {
 			}
 			// if many matches, it probably should not be reported at all.
 			if lnum, err := strconv.Atoi(t55[0]); err == nil {
-				rs = append(rs, fmt.Sprintf("  %6s: %s", t55[0], wbuf[lnum-1])) // 1-based
+				rs = append(rs, fmt.Sprintf("  %6s: %s", t55[0], pt(wbuf[lnum-1]) ))
 			} else {
 				rs = rs[:len(rs)-2] // back this one off rs
 			}
@@ -1137,6 +1145,11 @@ func tcHypConsistency(wb []string) []string {
 		if strings.Contains(s, "-") {
 			// hyphenated version present
 			s2 := strings.Replace(s, "-", "", -1)
+			// if s is entirely numeric, skip
+			match, _ := regexp.MatchString("[0123456789]+", s)
+			if match {
+				continue
+			}
 			// create non-hyphenated version and look for it
 			reported := false
 			for t, _ := range wordListMapCount {
@@ -1175,6 +1188,7 @@ func tcHypConsistency(wb []string) []string {
 						}
 
 					}
+					rs = append(rs, "")  // separate reports
 				}
 			}
 		}
@@ -1586,36 +1600,36 @@ func tcDashCheck(wb []string, pb []string) []string {
 		if re.MatchString(line) {
 			t2 := re2.MatchString(line)
 			if t2 {
-				a_hh = append(a_hh, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				a_hh = append(a_hh, fmt.Sprintf("  %6d: %s", i+1, pt(wb[i])))
 				continue
 			}
 			if strings.Contains(line, "-") { // hyphen-minus
-				a_hm = append(a_hm, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				a_hm = append(a_hm, fmt.Sprintf("  %6d: %s", i+1, pt(wb[i])))
 				continue
 			}
 
 			if strings.Contains(line, "‐") { // hyphen
-				a_hy = append(a_hy, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				a_hy = append(a_hy, fmt.Sprintf("  %6d: %s", i+1, pt(wb[i])))
 				continue
 			}
 			if strings.Contains(line, "‐") { // non-breaking hyphen
-				a_nb = append(a_nb, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				a_nb = append(a_nb, fmt.Sprintf("  %6d: %s", i+1, pt(wb[i])))
 				continue
 			}
 			if strings.Contains(line, "‒") { // figure dash
-				a_fd = append(a_fd, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				a_fd = append(a_fd, fmt.Sprintf("  %6d: %s", i+1, pt(wb[i])))
 				continue
 			}
 			if strings.Contains(line, "–") { // en-dash
-				a_en = append(a_en, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				a_en = append(a_en, fmt.Sprintf("  %6d: %s", i+1, pt(wb[i])))
 				continue
 			}
 			if strings.Contains(line, "—") { // em-dash
-				a_em = append(a_em, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+				a_em = append(a_em, fmt.Sprintf("  %6d: %s", i+1, pt(wb[i])))
 				continue
 			}
 			// if we get here, we have an unrecognized dash
-			a_un = append(a_un, fmt.Sprintf("  %6d: %s", i+1, wb[i]))
+			a_un = append(a_un, fmt.Sprintf("  %6d: %s", i+1, pt(wb[i])))
 		}
 	}
 
@@ -1928,7 +1942,7 @@ func tcLongLines(wb []string) []string {
 	nreports := 0
 	for _, lstr := range llst {
 		if p.Verbose || nreports < 5 {
-			rs = append(rs, fmt.Sprintf("%5d (%d) %s", lstr.lnum, lstr.llen, lstr.theline))
+			rs = append(rs, fmt.Sprintf("%5d (%d) %s", lstr.lnum, lstr.llen, pt(lstr.theline)))
 		}
 		nreports++
 	}
@@ -1991,7 +2005,7 @@ func tcAdjacentSpaces(wb []string) []string {
 	for n, line := range wb {
 		if strings.Contains(strings.TrimSpace(line), "  ") {
 			if p.Verbose || count < 5 {
-				rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, line)) // 1=based
+				rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, pt(line))) // 1=based
 			}
 			count += 1
 		}
@@ -2022,7 +2036,7 @@ func tcTrailingSpaces(wb []string) []string {
 	for n, line := range wb {
 		if strings.TrimSuffix(line, " ") != line {
 			if p.Verbose || count < 5 {
-				rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, line)) // 1=based
+				rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, pt(line))) // 1=based
 			}
 			count += 1
 		}
@@ -2097,7 +2111,7 @@ func tcLetterChecks(wb []string) []string {
 						line = strings.Replace(line, string(kv.Key), "☰"+string(kv.Key)+"☷", -1)
 						line = strings.Replace(line, "<", "&lt;", -1)
 						line = strings.Replace(line, ">", "&gt;", -1)					
-						rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, line)) // 1=based
+						rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, pt(line))) // 1=based
 					}
 					reportcount++
 				}
@@ -2105,6 +2119,7 @@ func tcLetterChecks(wb []string) []string {
 			if !p.Verbose && reportcount > 2 {
 				rs = append(rs, fmt.Sprintf("    ... %d more", reportcount-2))
 			}
+			rs = append(rs, "")
 		}
 	}
 	if count == 0 {
@@ -3442,6 +3457,14 @@ func jeebies() []string {
 	rs := []string{} // empty rs to start aggregation
 	rs = append(rs, "☳<a name='jeebi'></a>")
 
+	if p.Nojeeb {
+		rs = append(rs, "☲"+strings.Repeat("*", 80))
+		rs = append(rs, fmt.Sprintf("* %-76s *", "Jeebies report disabled"))
+		rs = append(rs, strings.Repeat("*", 80)+"☷")
+		rs = append(rs, "")
+		return rs
+	}	
+
 	rs = append(rs, "☳"+strings.Repeat("*", 80))
 	rs = append(rs, fmt.Sprintf("* %-76s *", "JEEBIES REPORT"))
 	rs = append(rs, strings.Repeat("*", 80))
@@ -3838,6 +3861,7 @@ func doparams() params {
 	flag.BoolVar(&p.Nolev, "d", false, "do not run Levenshtein distance tests")
 	flag.BoolVar(&p.Nosqc, "q", false, "do not run smart quote checks")
 	flag.BoolVar(&p.Nospell, "s", false, "do not run spellcheck")
+	flag.BoolVar(&p.Nojeeb, "j", false, "do not run jeebies")
 	flag.BoolVar(&p.Verbose, "v", false, "Verbose operation")
 	flag.BoolVar(&p.Revision, "r", false, "return Revision number")
 	flag.Parse()
