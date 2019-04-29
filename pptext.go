@@ -15,6 +15,7 @@ license:   GPL
 2019.04.18  add minor divider in hyphenation and non-hyphenated check
 2019.04.21  adds ability to skip spell-check (which also kills edit-distance)
 2019.04.21a curly quote check itemize suspects; ditto special situation checks
+2019.04.29  add minor divider in hyphenation and spaced pair check
 */
 
 package main
@@ -38,7 +39,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.04.21a"
+const VERSION string = "2019.04.29"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -1323,8 +1324,8 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 							}
 							wreported[hpair[0]] = 1
 							count++
+							rs = append(rs, "")  // separate reports
 						}
-
 					}
 				}
 			}
@@ -3033,7 +3034,8 @@ func textCheck() []string {
 	} else {
 		rs = append(rs, "☲----- hyphen-space consistency check ------------------------------------------")
 		rs = append(rs, "")
-		rs = append(rs, "skipped (time-expensive test)☷")
+		rs = append(rs, "skipped (time-expensive test)")
+		rs = append(rs, "☷")
 	}
 
 	start = time.Now()
