@@ -16,6 +16,8 @@ license:   GPL
 2019.04.21  adds ability to skip spell-check (which also kills edit-distance)
 2019.04.21a curly quote check itemize suspects; ditto special situation checks
 2019.04.29  add minor divider in hyphenation and spaced pair check
+2019.05.02  add debug code for memory usage
+2019.05.03  add file encoding report to header lines
 */
 
 package main
@@ -31,6 +33,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,7 +42,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.04.29"
+const VERSION string = "2019.05.03"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -79,11 +82,34 @@ var wbuf []string
 var heMap map[string]int
 var beMap map[string]int
 
+// debug messages
+var dbuf []string
+
 /* ********************************************************************** */
 /*                                                                        */
 /* utility functions                                                      */
 /*                                                                        */
 /* ********************************************************************** */
+
+// PrintMemUsage outputs the current, total and OS memory being used. As well as the number 
+// of garage collection cycles completed.
+func PrintMemUsage(s string) {
+	if p.Debug {
+		s = fmt.Sprintf("%40s: ", s)
+        var m runtime.MemStats
+        runtime.ReadMemStats(&m)
+        // For info on each, see: https://golang.org/pkg/runtime/#MemStats
+        s += fmt.Sprintf("A = %v MiB", bToMb(m.Alloc))
+        s += fmt.Sprintf("\tTA = %v MiB", bToMb(m.TotalAlloc))
+        s += fmt.Sprintf("\tSys = %v MiB", bToMb(m.Sys))
+        s += fmt.Sprintf("\t#GC = %v", m.NumGC)
+        dbuf = append(dbuf, s)
+    }
+}
+
+func bToMb(b uint64) uint64 {
+    return b / 1024 / 1024
+}
 
 // word is entirely numeric or entirely consistent case Roman numerals
 
@@ -207,6 +233,7 @@ type params struct {
 	Nojeeb		 bool
 	Verbose      bool
 	Revision	 bool
+	Debug		 bool
 }
 
 var p params
@@ -3866,6 +3893,7 @@ func doparams() params {
 	flag.BoolVar(&p.Nojeeb, "j", false, "do not run jeebies")
 	flag.BoolVar(&p.Verbose, "v", false, "Verbose operation")
 	flag.BoolVar(&p.Revision, "r", false, "return Revision number")
+	flag.BoolVar(&p.Debug, "c", false, "Debug flag")
 	flag.Parse()
 	return p
 }
@@ -3876,6 +3904,8 @@ func doparams() params {
 var runStartTime time.Time
 
 func main() {
+
+	PrintMemUsage("start of program")
 
 	loc, _ := time.LoadLocation("America/Denver")
 	runStartTime = time.Now()
@@ -3891,7 +3921,21 @@ func main() {
 		return
 	}
 
+	// if program name starts with "__", then switch on debug flag
+	if strings.HasPrefix(path.Base(p.Infile), "__") {
+		p.Debug = true
+	}
+
 	pptr = append(pptr, fmt.Sprintf("☲processing file: %s", path.Base(p.Infile)))
+
+
+	mycommand := fmt.Sprintf("file %s", p.Infile)
+	out, err := exec.Command("bash", "-c", mycommand).Output()
+	if err != nil {
+		log.Fatal(err)
+	}
+	pptr = append(pptr, fmt.Sprintf("%s", strings.TrimSpace(string(out))))
+
 	pptr = append(pptr, fmt.Sprintf("pptext version: %s", VERSION))
 
 	f, _ := os.Create(p.Outdir + "/runlog.txt")
@@ -3933,11 +3977,15 @@ func main() {
 		pptr = append(pptr, "no good words file specified")
 	}
 
+	PrintMemUsage("text, gwl, scannos now loaded")
+
 	// line word list: slice of words on each line of text file (capitalization retained)
 
 	for _, line := range wbuf {
 		lwl = append(lwl, getWordsOnLine(line))
 	}
+
+	PrintMemUsage("line word list now built")	
 
 	// word list map to frequency of occurrence and word list map to lines where it occurs
 	// capitalization retained; apostrophes protected
@@ -3991,6 +4039,8 @@ func main() {
 	/* smart quote checks place separate report in scanreport.txt            */
 	/*************************************************************************/
 
+	PrintMemUsage("word list map, paragraph buffer built")	
+
 	start := time.Now()
 	t := puncScan()
 	if SHOWTIMING {
@@ -3998,6 +4048,8 @@ func main() {
 	}
 
 	pptr = append(pptr, t...)
+
+	PrintMemUsage("punctuation scan complete")
 
 	/*************************************************************************/
 	/* spellcheck (using aspell)                                             */
@@ -4011,6 +4063,8 @@ func main() {
 		fmt.Printf("%s took %v\n", "aspellCheck", time.Since(start))
 	}
 
+	PrintMemUsage("aspell check complete")
+
 	/*************************************************************************/
 	/* Levenshtein check                                                     */
 	/* compares all suspect words to all okwords in text                     */
@@ -4023,6 +4077,8 @@ func main() {
 		fmt.Printf("%s took %v\n", "levencheck", time.Since(start))
 	}
 
+	PrintMemUsage("edit-distance check complete")
+
 	/*************************************************************************/
 	/* individual text checks                                                */
 	/*************************************************************************/
@@ -4033,6 +4089,8 @@ func main() {
 	if SHOWTIMING {
 		fmt.Printf("%s took %v\n", "textCheck", time.Since(start))
 	}
+
+	PrintMemUsage("textcheck consolidated tests complete")
 
 	/*************************************************************************/
 	/* Jeebies check                                                         */
@@ -4046,6 +4104,8 @@ func main() {
 		fmt.Printf("%s took %v\n", "jeebies", time.Since(start))
 	}
 
+	PrintMemUsage("jeebies complete")
+
 	// note: remaining words in sw are suspects.
 	// they could be used to start a user-maintained persistent good word list
 
@@ -4058,5 +4118,15 @@ func main() {
 	t2 := time.Now()
 	pptr = append(pptr, fmt.Sprintf("execution time: %.2f seconds", t2.Sub(runStartTime).Seconds()))
 
+	PrintMemUsage("at end of program")
+	runtime.GC()
+	PrintMemUsage("at end of program after forced GC")
+	if p.Debug {
+		pptr = append(pptr, "")
+		pptr = append(pptr, "DEBUG REPORT:")
+		for _, element := range dbuf {
+			pptr = append(pptr, element)
+		}
+	}
 	saveHtml(pptr, p.Outdir)
 }
