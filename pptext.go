@@ -18,6 +18,7 @@ license:   GPL
 2019.04.29  add minor divider in hyphenation and spaced pair check
 2019.05.02  add debug code for memory usage
 2019.05.03  add file encoding report to header lines
+2019.05.05  complete rewrite hyp-space consistency for memory optimization
 */
 
 package main
@@ -42,7 +43,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.05.03"
+const VERSION string = "2019.05.05"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -1234,132 +1235,73 @@ func tcHypConsistency(wb []string) []string {
 	return rs
 }
 
-// “We can’t let that man get away!”
-// “Get-away from here!”
 
-func tcHypSpaceConsistency(wb []string, pb []string) []string {
+// completely rewritten for memory-usage minimization
+
+func tcHypSpaceConsistency2(wb []string, pb []string) []string {
 	rs := []string{}
+	reportcount := 0
 	rs = append(rs, "----- hyphenation and spaced pair check ---------------------------------------")
-	rs = append(rs, "")
-	count := 0
 
-	re70 := regexp.MustCompile(`\p{P}`)  // punctuation
-	for wstr := range wordListMapCount {
-		if strings.Contains(wstr, "-") {
-			// split into two words into hpair (hyphenation pair)
-			hpair := strings.Split(wstr, "-")
-			if len(hpair) != 2 {
-				continue // only handle two words with one hyphen
-			}
-			if hpair[0] == "" || hpair[1] == "" {
-				continue // need words in both spots.
-			}
-			// both words lower case for compare
-			hpairlow := []string{strings.ToLower(hpair[0]), strings.ToLower(hpair[1])}
-			// ensure there is no punctuation in there
-			hpairlow[0] = re70.ReplaceAllString(hpairlow[0], "")
-			hpairlow[1] = re70.ReplaceAllString(hpairlow[1], "")
-			// look for first word in text
-			s := wordListMapLines[hpairlow[0]]
-			s += "," + wordListMapLines[strings.Title(hpairlow[0])]
-			s += "," + wordListMapLines[strings.ToUpper(hpairlow[0])]
-			s = strings.Replace(s, ",", " ", -1)
-			s = strings.TrimSpace(s)
-			wreported := map[string]int{}
+	cwmap := map[string]string{}  // map of all singly-hyphenated words
+	// find hyphenated words
+	re01 := regexp.MustCompile(`(?i)(\p{L}+)-(\p{L}+)-?(\p{L}+)?-?(\p{L}+)?`)
 
-			if s != "" {
-				// we have lines to check
-				ssp := strings.Split(s, " ")
-				for _, line := range ssp {
-					iline, _ := strconv.Atoi(line)
-					tmpline := ""
-					if iline == 0 {
-						continue
-					}
-					if iline < len(wb) {
-						tmpline = wb[iline-1] + " " + wb[iline]
-					} else {
-						tmpline = wb[iline-1]
-					}
-					t := `(?i)(^|\P{L})` + hpairlow[0] + " " + hpairlow[1] + `(\P{L}|$)`
-					re001 := regexp.MustCompile(t)
-					where := re001.FindAllString(tmpline, -1)
-					if where != nil {
-						count1 := 0
-						count2 := 0
-						acc1 := []string{}
-						acc2 := []string{}
-
-						// words separated by a space
-						re002 := regexp.MustCompile(`(?i)(?P<1W>^|\P{L})(?P<2W>` + hpairlow[0] + " " + hpairlow[1] + `)(?P<3W>\P{L}|$)`)
-						// words separated by newline (equivalent to a space)
-						re003 := regexp.MustCompile(`(?i)(?P<1W>^|\P{L})(?P<2W>` + hpairlow[0] + `)$`)
-						re004 := regexp.MustCompile(`(?i)^(?P<2W>` + hpairlow[1] + `)(?P<3W>\P{L}|$)`)
-						// words spearated by a hyphen
-						re005 := regexp.MustCompile(`(?i)(?P<1W>^|\P{L})(?P<2W>` + hpairlow[0] + "-" + hpairlow[1]  + `)(?P<3W>\P{L}|$)`)
-
-						for i, _ := range wb {
-
-							// count word space word
-							where := re002.FindAllStringSubmatch(wb[i], -1)
-							if where != nil {
-								count1++
-								re002a := regexp.MustCompile(`(` + where[0][2] + `)`)
-								t = re002a.ReplaceAllString(wb[i], `☰${1}☷`)								
-								acc1 = append(acc1, fmt.Sprintf("%6d: %s", i+1, t))
-							}
-
-							// count word newline word
-							if i < len(wb)-1 {
-								// this line
-								where2 := re003.FindAllStringSubmatch(wb[i], -1)
-								// next line
-								where3 := re004.FindAllStringSubmatch(wb[i+1], -1)
-								if where2 != nil && where3 != nil {
-									count1++
-									re003a := regexp.MustCompile(`(` + where2[0][2] + `)`)
-									t = re003a.ReplaceAllString(wb[i], `☰${1}☷`)
-									acc1 = append(acc1, fmt.Sprintf("%6d: %s", i+1, t))
-									re004a := regexp.MustCompile(`(` + where3[0][1] + `)`)
-									t = re004a.ReplaceAllString(wb[i+1], `☰${1}☷`)
-									acc1 = append(acc1, fmt.Sprintf("        %s", t))
-								}
-							}
-
-							// count word hyphen word
-							where4 := re005.FindAllStringSubmatch(wb[i], -1)
-							if where4 != nil {
-								count2++
-								re005a := regexp.MustCompile(`(` + where4[0][2] + `)`)
-								t = re005a.ReplaceAllString(wb[i], `☰${1}☷`)
-								acc2 = append(acc2, fmt.Sprintf("%6d: %s", i+1, t))
-							}
-						}
-
-
-						if _, ok := wreported[hpair[0]]; !ok {
-							rs = append(rs, fmt.Sprintf("\"%s-%s\" (%d) ❬-❭ \"%s %s\" (%d)",
-								hpair[0], hpair[1], count2, hpairlow[0], hpairlow[1], count1))
-							if p.Verbose {
-								rs = append(rs, acc2...)
-								rs = append(rs, "        -----")
-								rs = append(rs, acc1...)
-							} else {
-								rs = append(rs, acc2[0])
-								rs = append(rs, "        -----")
-								rs = append(rs, acc1[0])
-							}
-							wreported[hpair[0]] = 1
-							count++
-							rs = append(rs, "")  // separate reports
-						}
-					}
-				}
+	for i, line := range wbuf {  // no hyphenation over line break
+		t := re01.FindAllStringSubmatch(line, -1)
+		for _,u := range t {
+			if _, ok := cwmap[strings.ToLower(u[0])]; ok {
+				// it is in the map already, add line number
+				cwmap[strings.ToLower(u[0])] += fmt.Sprintf(",%d", i)
+			} else {
+				cwmap[strings.ToLower(u[0])] = fmt.Sprintf("%d", i)
 			}
 		}
 	}
-
-	if count == 0 {
+	t := []string{}
+	for k, _ := range cwmap {
+		t = append(t, k)
+	}
+	for _, lookfor := range(t) {
+		reported := false
+		lookfors := strings.Replace(lookfor, "-", " ", -1)
+		re02 := regexp.MustCompile(`(?i)\P{L}`+lookfors+`\P{L}`)
+		cwohyp := 0
+		for i,line := range wbuf {
+			t2 := re02.FindAllStringSubmatch(line, -1)
+			if t2 != nil {
+				if !reported {
+					// first report
+					rs = append(rs, fmt.Sprintf("'%s' ❬-❭ '%s'", lookfor, lookfors))
+					wherewithhyp := strings.Split(cwmap[lookfor], ",")
+					cwhyp := 0
+					for _, wwh := range wherewithhyp {
+						wwhi, _ := strconv.Atoi(wwh)
+						rs = append(rs, fmt.Sprintf("%6s: %s", wwh, wbuf[wwhi]))
+						cwhyp += 1
+						if cwhyp == 5 {
+							rs = append(rs, "        ... more")
+							break
+						}
+					}
+					rs = append(rs, "      ---")
+					reported = true				
+				}
+				cwohyp += 1
+				if cwohyp < 5 {
+					rs = append(rs, fmt.Sprintf("%6d: %s", i, line))	
+				}
+				if cwohyp == 5 {
+					rs = append(rs, "        ... more")
+				}		
+			}
+		}
+		if reported {
+			rs = append(rs, "")
+			reportcount += 1
+		}
+	}
+	if reportcount == 0 {
 		rs = append(rs, "  no hyphenated/spaced pair inconsistencies found.")
 		rs[0] = "☲" + rs[0] // style dim
 	} else {
@@ -1367,7 +1309,7 @@ func tcHypSpaceConsistency(wb []string, pb []string) []string {
 	}
 	rs = append(rs, "")
 	rs[len(rs)-1] += "☷" // close style
-	tcec += count
+	tcec += reportcount
 	return rs
 }
 
@@ -1856,9 +1798,9 @@ func tcRepeatedWords(pb []string) []string {
 	rs = append(rs, "")
 
 	count := 0
+	re := regexp.MustCompile(`\p{L}\p{L}+ \p{L}\p{L}+`)
 	for _, para := range pb { // go over each paragraph
 		// at least two letter words separated by a space
-		re := regexp.MustCompile(`\p{L}\p{L}+ \p{L}\p{L}+`)
 		start := 0
 		for u := re.FindStringIndex(para[start:]); u != nil; {
 			pair := (para[start+u[0] : start+u[1]])
@@ -3051,78 +2993,113 @@ func textCheck() []string {
 	rs = append(rs, "")
 
 	start := time.Now()
+	PrintMemUsage("starting tcHypConsistency")
 	rs = append(rs, tcHypConsistency(wbuf)...)
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcHypConsistency", time.Since(start)) }
+	PrintMemUsage("done")
 
-	if !p.Experimental {	
-		start = time.Now()
-		rs = append(rs, tcHypSpaceConsistency(wbuf, pbuf)...)
-		if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcHypSpaceConsistency", time.Since(start)) }
-	} else {
-		rs = append(rs, "☲----- hyphen-space consistency check ------------------------------------------")
-		rs = append(rs, "")
-		rs = append(rs, "skipped (time-expensive test)")
-		rs = append(rs, "☷")
-	}
+
+
+
+
+
+
+//	if !p.Experimental {	
+//		start = time.Now()
+//		PrintMemUsage("starting tcHypSpaceConsistency")
+//		rs = append(rs, tcHypSpaceConsistency(wbuf, pbuf)...)
+//		PrintMemUsage("done")
+//		if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcHypSpaceConsistency", time.Since(start)) }
+//	} else {
+//		rs = append(rs, "☲----- hyphen-space consistency check ------------------------------------------")
+//		rs = append(rs, "")
+//		rs = append(rs, "skipped (time-expensive test)")
+//		rs = append(rs, "☷")
+//	}
+
+	// *******************************
+
+	start = time.Now()
+	PrintMemUsage("starting tcHypSpaceConsistency2")
+	rs = append(rs, tcHypSpaceConsistency2(wbuf, pbuf)...)
+	PrintMemUsage("done")
+	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcHypSpaceConsistency2", time.Since(start)) }	
+
+	// *******************************
 
 	start = time.Now()
 	rs = append(rs, tcAsteriskCheck(wbuf)...)
+	PrintMemUsage("3071")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcAsteriskCheck", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, tcAdjacentSpaces(wbuf)...)
+	PrintMemUsage("3076")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcAdjacentSpaces", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, tcTrailingSpaces(wbuf)...)
+	PrintMemUsage("3081")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcTrailingSpaces", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, tcLetterChecks(wbuf)...)
+	PrintMemUsage("3085")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcLetterChecks", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, tcSpacingCheck(wbuf)...)
+	PrintMemUsage("3091")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcSpacingCheck", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, tcShortLines(wbuf)...)
+	PrintMemUsage("3096")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcShortLines", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, tcLongLines(wbuf)...)
+	PrintMemUsage("3100")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcLongLines", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, tcRepeatedWords(pbuf)...)
+	PrintMemUsage("3105")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcRepeatedWords", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, tcEllipsisCheck(wbuf)...)
+	PrintMemUsage("3111")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcEllipsisCheck", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, tcDashCheck(wbuf, pbuf)...)
+	PrintMemUsage("3116")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcDashCheck", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, scannoCheck(wbuf)...)
+	PrintMemUsage("3120")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  scannoCheck", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, tcCurlyQuoteCheck(wbuf)...)
+	PrintMemUsage("3126")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcCurlyQuoteCheck", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, tcGutChecks(wbuf)...)
+	PrintMemUsage("3131")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcGutChecks", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, tcBookLevel(wbuf)...)
+	PrintMemUsage("3136")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcBookLevel", time.Since(start)) }
 
 	start = time.Now()
 	rs = append(rs, tcParaLevel()...)
+	PrintMemUsage("3141")
 	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcParaLevel", time.Since(start)) }
 
 	if tcec == 0 { // test check error count
