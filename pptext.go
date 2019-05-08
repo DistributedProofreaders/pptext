@@ -19,6 +19,7 @@ license:   GPL
 2019.05.02  add debug code for memory usage
 2019.05.03  add file encoding report to header lines
 2019.05.05  complete rewrite hyp-space consistency for memory optimization
+2019.05.07  incorrectly split paragraph to work within a block quote
 */
 
 package main
@@ -2535,8 +2536,9 @@ func tcParaLevel() []string {
 
 	// ------------------------------------------------------------------------
 	// check: incorrectly split paragraph
+	// 2019.05.07 allow optional space so test works in a block quote
 
-	re = regexp.MustCompile(`^[a-z]`)
+	re = regexp.MustCompile(`^\s*[a-z]`)
 	sscnt = 0
 	for _, para := range pbuf {
 		loc := re.FindStringIndex(para)
