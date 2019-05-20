@@ -20,6 +20,18 @@ license:   GPL
 2019.05.03  add file encoding report to header lines
 2019.05.05  complete rewrite hyp-space consistency for memory optimization
 2019.05.07  incorrectly split paragraph to work within a block quote
+2019.05.14  hook for skipping hyphenation checks (filename start with "%")
+            corrections to parsing for Dr, etc.
+2019.05.16  user can choose selected tests. default is "a" (all)
+            tests are 
+            q: smart quote scan
+            s: spellcheck
+            e: edit distance
+            t: text checks
+	            1: tcHypConsistency subtest
+    	        2: tcHypSpaceConsistency2 subtest
+            j: jeebies
+2019.05.19  corrected good word list count calculation
 */
 
 package main
@@ -35,7 +47,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -44,7 +55,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.05.05"
+const VERSION string = "2019.05.19"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -92,26 +103,6 @@ var dbuf []string
 /* utility functions                                                      */
 /*                                                                        */
 /* ********************************************************************** */
-
-// PrintMemUsage outputs the current, total and OS memory being used. As well as the number 
-// of garage collection cycles completed.
-func PrintMemUsage(s string) {
-	if p.Debug {
-		s = fmt.Sprintf("%40s: ", s)
-        var m runtime.MemStats
-        runtime.ReadMemStats(&m)
-        // For info on each, see: https://golang.org/pkg/runtime/#MemStats
-        s += fmt.Sprintf("A = %v MiB", bToMb(m.Alloc))
-        s += fmt.Sprintf("\tTA = %v MiB", bToMb(m.TotalAlloc))
-        s += fmt.Sprintf("\tSys = %v MiB", bToMb(m.Sys))
-        s += fmt.Sprintf("\t#GC = %v", m.NumGC)
-        dbuf = append(dbuf, s)
-    }
-}
-
-func bToMb(b uint64) uint64 {
-    return b / 1024 / 1024
-}
 
 // word is entirely numeric or entirely consistent case Roman numerals
 
@@ -236,6 +227,7 @@ type params struct {
 	Verbose      bool
 	Revision	 bool
 	Debug		 bool
+	SelectedTests string // a=all, b-z0-9=selected tests
 }
 
 var p params
@@ -505,6 +497,13 @@ func puncScan() []string {
 		rs = append(rs, "Smart Quote Checks skipped (British-style punctuation)")
 		return rs
 	}
+
+	rs = append(rs, "☳<a name='sqs'></a>")
+
+	rs = append(rs, "☳"+strings.Repeat("*", 80))
+	rs = append(rs, fmt.Sprintf("* %-76s *", fmt.Sprintf("SMART QUOTE SCAN")))
+	rs = append(rs, strings.Repeat("*", 80))
+	rs = append(rs, "")
 
 	// here we can run a curly quote scan
 	// build the header
@@ -781,7 +780,7 @@ func puncScan() []string {
 
 	if !anyreport {
 		prs = append(prs, "no punctuation scan suspects reported")
-		rs = append(rs, "Punctuation Scan: no suspects reported")
+		rs = append(rs, "Smart Quote Scan: no suspects reported")
 	} else {
 		f2, err := os.Create(p.Outdir + "/scanreport.txt")
 		if err != nil {
@@ -795,7 +794,7 @@ func puncScan() []string {
 			fmt.Fprintf(f2, "%s\n", u)
 		}
 		f2.Close()
-		rs = append(rs, "Punctuation Scan: report generated in scanreport.txt")
+		rs = append(rs, "Smart Quote Scan: report generated in scanreport.txt")
 	}
 	return rs
 }
@@ -1243,6 +1242,7 @@ func tcHypSpaceConsistency2(wb []string, pb []string) []string {
 	rs := []string{}
 	reportcount := 0
 	rs = append(rs, "----- hyphenation and spaced pair check ---------------------------------------")
+	rs = append(rs, "")
 
 	cwmap := map[string]string{}  // map of all singly-hyphenated words
 	// find hyphenated words
@@ -2221,12 +2221,12 @@ func tcBookLevel(wb []string) []string {
 
 	// ----- check American and British title punctuation mixed -----
 
-	re01 = regexp.MustCompile(`(?i)Mr\.`)
-	re02 = regexp.MustCompile(`(?i)Mr\s`)
-	re03 = regexp.MustCompile(`(?i)Mrs\.`)
-	re04 = regexp.MustCompile(`(?i)Mrs\s`)
-	re05 = regexp.MustCompile(`(?i)Dr\.`)
-	re06 = regexp.MustCompile(`(?i)Dr\s`)
+	re01 = regexp.MustCompile(`(?i)\P{L}Mr\.`)
+	re02 = regexp.MustCompile(`(?i)\P{L}Mr\p{Zs}`)
+	re03 = regexp.MustCompile(`(?i)\P{L}Mrs\.`)
+	re04 = regexp.MustCompile(`(?i)\P{L}Mrs\p{Zs}`)
+	re05 = regexp.MustCompile(`(?i)\P{L}Dr\.`)
+	re06 = regexp.MustCompile(`(?i)\P{L}Dr\p{Zs}`)
 
 	count_mr_period, count_mr_space, count_mrs_period, count_mrs_space, count_dr_period, count_dr_space := 0, 0, 0, 0, 0, 0
 	for _, line := range wb {
@@ -2994,115 +2994,29 @@ func textCheck() []string {
 	rs = append(rs, fmt.Sprintf("********************************************************************************"))
 	rs = append(rs, "")
 
-	start := time.Now()
-	PrintMemUsage("starting tcHypConsistency")
-	rs = append(rs, tcHypConsistency(wbuf)...)
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcHypConsistency", time.Since(start)) }
-	PrintMemUsage("done")
+	if strings.ContainsAny(p.SelectedTests, "a1") { // 1 is reserved for this subtest
+		rs = append(rs, tcHypConsistency(wbuf)...)
+	}
 
+	if strings.ContainsAny(p.SelectedTests, "a2") { // 2 is reserved for this subtest
+		rs = append(rs, tcHypSpaceConsistency2(wbuf, pbuf)...)
+	}
 
-
-
-
-
-
-//	if !p.Experimental {	
-//		start = time.Now()
-//		PrintMemUsage("starting tcHypSpaceConsistency")
-//		rs = append(rs, tcHypSpaceConsistency(wbuf, pbuf)...)
-//		PrintMemUsage("done")
-//		if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcHypSpaceConsistency", time.Since(start)) }
-//	} else {
-//		rs = append(rs, "☲----- hyphen-space consistency check ------------------------------------------")
-//		rs = append(rs, "")
-//		rs = append(rs, "skipped (time-expensive test)")
-//		rs = append(rs, "☷")
-//	}
-
-	// *******************************
-
-	start = time.Now()
-	PrintMemUsage("starting tcHypSpaceConsistency2")
-	rs = append(rs, tcHypSpaceConsistency2(wbuf, pbuf)...)
-	PrintMemUsage("done")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcHypSpaceConsistency2", time.Since(start)) }	
-
-	// *******************************
-
-	start = time.Now()
 	rs = append(rs, tcAsteriskCheck(wbuf)...)
-	PrintMemUsage("3071")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcAsteriskCheck", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, tcAdjacentSpaces(wbuf)...)
-	PrintMemUsage("3076")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcAdjacentSpaces", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, tcTrailingSpaces(wbuf)...)
-	PrintMemUsage("3081")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcTrailingSpaces", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, tcLetterChecks(wbuf)...)
-	PrintMemUsage("3085")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcLetterChecks", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, tcSpacingCheck(wbuf)...)
-	PrintMemUsage("3091")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcSpacingCheck", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, tcShortLines(wbuf)...)
-	PrintMemUsage("3096")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcShortLines", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, tcLongLines(wbuf)...)
-	PrintMemUsage("3100")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcLongLines", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, tcRepeatedWords(pbuf)...)
-	PrintMemUsage("3105")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcRepeatedWords", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, tcEllipsisCheck(wbuf)...)
-	PrintMemUsage("3111")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcEllipsisCheck", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, tcDashCheck(wbuf, pbuf)...)
-	PrintMemUsage("3116")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcDashCheck", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, scannoCheck(wbuf)...)
-	PrintMemUsage("3120")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  scannoCheck", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, tcCurlyQuoteCheck(wbuf)...)
-	PrintMemUsage("3126")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcCurlyQuoteCheck", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, tcGutChecks(wbuf)...)
-	PrintMemUsage("3131")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcGutChecks", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, tcBookLevel(wbuf)...)
-	PrintMemUsage("3136")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcBookLevel", time.Since(start)) }
-
-	start = time.Now()
 	rs = append(rs, tcParaLevel()...)
-	PrintMemUsage("3141")
-	if SHOWTIMING { fmt.Printf("%s took %v\n", "  tcParaLevel", time.Since(start)) }
 
 	if tcec == 0 { // test check error count
 		rs[0] = "☲" + rs[0] // style dim
@@ -3305,7 +3219,7 @@ func levencheck(suspects []string) []string {
 
 	if p.Nolev {
 		rs = append(rs, "☲"+strings.Repeat("*", 80))
-		rs = append(rs, fmt.Sprintf("* %-76s *", "LEVENSHTEIN (EDIT DISTANCE) CHECKS disabled"))
+		rs = append(rs, fmt.Sprintf("* %-76s *", "EDIT DISTANCE CHECKS disabled"))
 		rs = append(rs, strings.Repeat("*", 80)+"☷")
 		rs = append(rs, "")
 		return rs
@@ -3313,7 +3227,7 @@ func levencheck(suspects []string) []string {
 
 	if !p.Nolev && p.Nospell {
 		rs = append(rs, "☲"+strings.Repeat("*", 80))
-		rs = append(rs, fmt.Sprintf("* %-76s *", "LEVENSHTEIN (EDIT DISTANCE) CHECKS not available (no previous spellcheck)"))
+		rs = append(rs, fmt.Sprintf("* %-76s *", "EDIT DISTANCE CHECKS not available (no previous spellcheck)"))
 		rs = append(rs, strings.Repeat("*", 80)+"☷")
 		rs = append(rs, "")
 		return rs
@@ -3322,7 +3236,7 @@ func levencheck(suspects []string) []string {
 	// here we can run a distance check
 	// build the header
 	rs = append(rs, "☳"+strings.Repeat("*", 80))
-	rs = append(rs, fmt.Sprintf("* %-76s *", "LEVENSHTEIN (EDIT DISTANCE) CHECKS"))
+	rs = append(rs, fmt.Sprintf("* %-76s *", "EDIT DISTANCE CHECKS"))
 	rs = append(rs, strings.Repeat("*", 80))
 	rs = append(rs, "")
 
@@ -3820,11 +3734,11 @@ func readHeBe(infile string) (map[string]int, map[string]int) {
 // if lower case, add title and upper case
 // if title case, add upper case
 
-func readWordList(infile string) []string {
+func readWordList(infile string) ([]string, int) {
 	wd := []string{}
 	file, err := os.Open(infile) // try to open wordlist
 	if err != nil {
-		return wd // early exit if it isn't present
+		return wd, 0 // early exit if it isn't present
 	}
 	defer file.Close() // here if it opened
 	scanner := bufio.NewScanner(file)
@@ -3843,6 +3757,8 @@ func readWordList(infile string) []string {
 		wd[i] = strings.Replace(word, "'", "’", -1)
 	}
 
+	goodwordsread := len(wd)  // how many user provided (before I augment the list)
+
 	// if lower case, add title and upper case
 	// if title case, add upper case
 	addwd := []string{}
@@ -3856,7 +3772,7 @@ func readWordList(infile string) []string {
 		}
 	}
 	wd = append(wd, addwd...)
-	return wd
+	return wd, goodwordsread
 }
 
 func doparams() params {
@@ -3865,6 +3781,7 @@ func doparams() params {
 	flag.StringVar(&p.Outdir, "o", ".", "output report directory")
 	flag.StringVar(&p.Alang, "a", "en", "aspell wordlist language")
 	flag.StringVar(&p.GWFilename, "g", "", "good words file")
+	flag.StringVar(&p.SelectedTests, "t", "a", "tests to run")
 	flag.BoolVar(&p.Experimental, "x", false, "experimental (developer use)")
 	flag.BoolVar(&p.Nolev, "d", false, "do not run Levenshtein distance tests")
 	flag.BoolVar(&p.Nosqc, "q", false, "do not run smart quote checks")
@@ -3884,8 +3801,6 @@ var runStartTime time.Time
 
 func main() {
 
-	PrintMemUsage("start of program")
-
 	loc, _ := time.LoadLocation("America/Denver")
 	runStartTime = time.Now()
 	pptr = append(pptr, strings.Repeat("*", 80))
@@ -3900,20 +3815,16 @@ func main() {
 		return
 	}
 
-	// if program name starts with "__", then switch on debug flag
-	if strings.HasPrefix(path.Base(p.Infile), "__") {
-		p.Debug = true
-	}
-
 	pptr = append(pptr, fmt.Sprintf("☲processing file: %s", path.Base(p.Infile)))
-
 
 	mycommand := fmt.Sprintf("file %s", p.Infile)
 	out, err := exec.Command("bash", "-c", mycommand).Output()
 	if err != nil {
 		log.Fatal(err)
 	}
-	pptr = append(pptr, fmt.Sprintf("%s", strings.TrimSpace(string(out))))
+	o2 := strings.Split(string(out), ":")
+
+	pptr = append(pptr, fmt.Sprintf("encoding: %s", strings.TrimSpace(o2[1])))
 
 	pptr = append(pptr, fmt.Sprintf("pptext version: %s", VERSION))
 
@@ -3943,12 +3854,13 @@ func main() {
 	heMap, beMap = readHeBe(filepath.Join(loc_exec, "hebelist.txt"))
 
 	// load good word list
+	howmany := 0
 	if len(p.GWFilename) > 0 { // a good word list was specified
 		if _, err := os.Stat(p.GWFilename); !os.IsNotExist(err) { // it exists
 			_, file := filepath.Split(p.GWFilename)
 			pptr = append(pptr, fmt.Sprintf("good words file: %s", file))
-			goodWordlist = readWordList(p.GWFilename)
-			pptr = append(pptr, fmt.Sprintf("good word count: %d words", len(goodWordlist)))
+			goodWordlist, howmany = readWordList(p.GWFilename)
+			pptr = append(pptr, fmt.Sprintf("good word count: %d words", howmany))
 		} else { // it does not exist
 			pptr = append(pptr, fmt.Sprintf("no %s found", p.GWFilename))
 		}
@@ -3956,15 +3868,11 @@ func main() {
 		pptr = append(pptr, "no good words file specified")
 	}
 
-	PrintMemUsage("text, gwl, scannos now loaded")
-
 	// line word list: slice of words on each line of text file (capitalization retained)
 
 	for _, line := range wbuf {
 		lwl = append(lwl, getWordsOnLine(line))
 	}
-
-	PrintMemUsage("line word list now built")	
 
 	// word list map to frequency of occurrence and word list map to lines where it occurs
 	// capitalization retained; apostrophes protected
@@ -4003,7 +3911,26 @@ func main() {
 	pptr = append(pptr, fmt.Sprintf("punctuation style: %s☷", puncStyle)) // close header info
 	pptr = append(pptr, "")
 
-	pptr = append(pptr, "☳reports: <a href='#spell'>spellcheck</a> | <a href='#leven'>edit distance</a> | <a href='#texta'>text analysis</a> | <a href='#jeebi'>jeebies</a>☷")
+	// build the links based on what was requested
+
+	s := ""
+	if strings.ContainsAny(p.SelectedTests, "aq") {
+		s = s + "<a href='#sqc'>smartquote scan</a> "
+	}
+	if strings.ContainsAny(p.SelectedTests, "as") {
+		s = s + " <a href='#spell'>spellcheck</a> "
+	}
+	if strings.ContainsAny(p.SelectedTests, "ae") {
+		s = s + " <a href='#leven'>edit distance</a> "
+	}
+	if strings.ContainsAny(p.SelectedTests, "at12") {
+		s = s + " <a href='#texta'>text checks</a> "
+	}
+	if strings.ContainsAny(p.SelectedTests, "aj") {
+		s = s + " <a href='#jeebi'>jeebies</a> "
+	}
+
+	pptr = append(pptr, "☳reports: "+s+"☷")
 	pptr = append(pptr, "")
 
 	// prettyPrint(scannoWordlist)
@@ -4018,72 +3945,59 @@ func main() {
 	/* smart quote checks place separate report in scanreport.txt            */
 	/*************************************************************************/
 
-	PrintMemUsage("word list map, paragraph buffer built")	
-
-	start := time.Now()
-	t := puncScan()
-	if SHOWTIMING {
-		fmt.Printf("%s took %v\n", "puncScan", time.Since(start))
+	// run this test if "a" all or "q" smart quote scan requested
+	if strings.ContainsAny(p.SelectedTests, "aq") {
+		t := puncScan()
+		pptr = append(pptr, t...)
 	}
-
-	pptr = append(pptr, t...)
-
-	PrintMemUsage("punctuation scan complete")
 
 	/*************************************************************************/
 	/* spellcheck (using aspell)                                             */
 	/* returns suspect words, okwords, report                                */
 	/*************************************************************************/
 
-	start = time.Now()
-	sw, okwords, t = aspellCheck()
-	pptr = append(pptr, t...)
-	if SHOWTIMING {
-		fmt.Printf("%s took %v\n", "aspellCheck", time.Since(start))
+	// run this test if "a" all or "s" spellcheck or "e" edit distance
+	// "e" uses okwords
+	if strings.ContainsAny(p.SelectedTests, "ase") {
+		var t []string
+		sw, okwords, t = aspellCheck()
+		// only report this test if "a" or "s"
+		if strings.ContainsAny(p.SelectedTests, "as") {
+			pptr = append(pptr, t...)
+		}
 	}
-
-	PrintMemUsage("aspell check complete")
 
 	/*************************************************************************/
 	/* Levenshtein check                                                     */
 	/* compares all suspect words to all okwords in text                     */
 	/*************************************************************************/
 
-	start = time.Now()
-	t = levencheck(sw)
-	pptr = append(pptr, t...)
-	if SHOWTIMING {
-		fmt.Printf("%s took %v\n", "levencheck", time.Since(start))
+	// run this test if "a" all or "e" edit distance
+	if strings.ContainsAny(p.SelectedTests, "ae") {
+		t := levencheck(sw)
+		pptr = append(pptr, t...)
 	}
-
-	PrintMemUsage("edit-distance check complete")
 
 	/*************************************************************************/
 	/* individual text checks                                                */
 	/*************************************************************************/
 
-	start = time.Now()
-	t = textCheck()
-	pptr = append(pptr, t...)
-	if SHOWTIMING {
-		fmt.Printf("%s took %v\n", "textCheck", time.Since(start))
+	// run this test if "a" all or "t" text checks
+	if strings.ContainsAny(p.SelectedTests, "at12") {
+		t := textCheck()
+		pptr = append(pptr, t...)
 	}
-
-	PrintMemUsage("textcheck consolidated tests complete")
 
 	/*************************************************************************/
 	/* Jeebies check                                                         */
 	/* jeebies looks for he/be errors                                        */
 	/*************************************************************************/
 
-	start = time.Now()
-	t = jeebies()
-	pptr = append(pptr, t...)
-		if SHOWTIMING {
-		fmt.Printf("%s took %v\n", "jeebies", time.Since(start))
+	// run this test if "a" all or "j" jeebies checks
+	if strings.ContainsAny(p.SelectedTests, "aj") {
+		t := jeebies()
+		pptr = append(pptr, t...)
 	}
-
-	PrintMemUsage("jeebies complete")
 
 	// note: remaining words in sw are suspects.
 	// they could be used to start a user-maintained persistent good word list
@@ -4096,16 +4010,5 @@ func main() {
 	pptr = append(pptr, "run complete")
 	t2 := time.Now()
 	pptr = append(pptr, fmt.Sprintf("execution time: %.2f seconds", t2.Sub(runStartTime).Seconds()))
-
-	PrintMemUsage("at end of program")
-	runtime.GC()
-	PrintMemUsage("at end of program after forced GC")
-	if p.Debug {
-		pptr = append(pptr, "")
-		pptr = append(pptr, "DEBUG REPORT:")
-		for _, element := range dbuf {
-			pptr = append(pptr, element)
-		}
-	}
 	saveHtml(pptr, p.Outdir)
 }
