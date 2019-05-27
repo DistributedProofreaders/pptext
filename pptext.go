@@ -32,6 +32,7 @@ license:   GPL
     	        2: tcHypSpaceConsistency2 subtest
             j: jeebies
 2019.05.19  corrected good word list count calculation
+2019.05.26  use \P{L} for word boundary in (2) text checks
 */
 
 package main
@@ -55,7 +56,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.05.19"
+const VERSION string = "2019.05.26"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -220,10 +221,6 @@ type params struct {
 	Alang        string
 	GWFilename   string
 	Experimental bool
-	Nolev        bool
-	Nosqc        bool
-	Nospell		 bool
-	Nojeeb		 bool
 	Verbose      bool
 	Revision	 bool
 	Debug		 bool
@@ -489,10 +486,6 @@ func puncScan() []string {
 	rs := []string{}  // returned and displayed in pptext report
 	prs := []string{} // saved to scanreport.txt
 
-	if p.Nosqc {
-		rs = append(rs, "Smart Quote Checks disabled by user")
-		return rs
-	}
 	if puncStyle == "British" {
 		rs = append(rs, "Smart Quote Checks skipped (British-style punctuation)")
 		return rs
@@ -829,14 +822,6 @@ func aspellCheck() ([]string, []string, []string) {
 	var sw []string // suspect words
 	okwords := make(map[string]int, len(wordListMapCount))
 	okslice := []string{}
-
-	if p.Nospell {
-		rs = append(rs, "☲"+strings.Repeat("*", 80))
-		rs = append(rs, fmt.Sprintf("* %-76s *", "Spellcheck disabled by user"))
-		rs = append(rs, strings.Repeat("*", 80)+"☷")
-		rs = append(rs, "")
-		return sw, okslice, rs
-	}	
 
 	rs := []string{} // empty rs to start aggregation
 	rs = append(rs, "☳<a name='spell'></a>")
@@ -2761,10 +2746,10 @@ func tcGutChecks(wb []string) []string {
 
 	const (
 		// commas should not occur after these words
-		NOCOMMAPATTERN = `\b(the,|it's,|their,|an,|mrs,|a,|our,|that's,|its,|whose,|every,|i'll,|your,|my,|mr,|mrs,|mss,|mssrs,|ft,|pm,|st,|dr,|rd,|pp,|cf,|jr,|sr,|vs,|lb,|lbs,|ltd,|i'm,|during,|let,|toward,|among,)`
+		NOCOMMAPATTERN = `\P{L}(the,|it's,|their,|an,|mrs,|a,|our,|that's,|its,|whose,|every,|i'll,|your,|my,|mr,|mrs,|mss,|mssrs,|ft,|pm,|st,|dr,|rd,|pp,|cf,|jr,|sr,|vs,|lb,|lbs,|ltd,|i'm,|during,|let,|toward,|among,)`
 
 		// periods should not occur after these words
-		NOPERIODPATTERN = `\b(every\.|i'm\.|during\.|that's\.|their\.|your\.|our\.|my\.|or\.|and\.|but\.|as\.|if\.|the\.|its\.|it's\.|until\.|than\.|whether\.|i'll\.|whose\.|who\.|because\.|when\.|let\.|till\.|very\.|an\.|among\.|those\.|into\.|whom\.|having\.|thence\.)`
+		NOPERIODPATTERN = `\P{L}(every\.|i'm\.|during\.|that's\.|their\.|your\.|our\.|my\.|or\.|and\.|but\.|as\.|if\.|the\.|its\.|it's\.|until\.|than\.|whether\.|i'll\.|whose\.|who\.|because\.|when\.|let\.|till\.|very\.|an\.|among\.|those\.|into\.|whom\.|having\.|thence\.)`
 	)
 
 	re_comma := regexp.MustCompile(NOCOMMAPATTERN)
@@ -3211,29 +3196,12 @@ func showWordInContext(word string) []string {
 // iterate over every suspect word at least six runes long
 // update: use any length
 // case insensitive
-// looking for a any word in the text that is "near"
+// looking for any word in the text that is "near"
 func levencheck(suspects []string) []string {
 
 	rs := []string{} // local rs to start aggregation
 	rs = append(rs, "☳<a name='leven'></a>")
 
-	if p.Nolev {
-		rs = append(rs, "☲"+strings.Repeat("*", 80))
-		rs = append(rs, fmt.Sprintf("* %-76s *", "EDIT DISTANCE CHECKS disabled"))
-		rs = append(rs, strings.Repeat("*", 80)+"☷")
-		rs = append(rs, "")
-		return rs
-	}
-
-	if !p.Nolev && p.Nospell {
-		rs = append(rs, "☲"+strings.Repeat("*", 80))
-		rs = append(rs, fmt.Sprintf("* %-76s *", "EDIT DISTANCE CHECKS not available (no previous spellcheck)"))
-		rs = append(rs, strings.Repeat("*", 80)+"☷")
-		rs = append(rs, "")
-		return rs
-	}
-
-	// here we can run a distance check
 	// build the header
 	rs = append(rs, "☳"+strings.Repeat("*", 80))
 	rs = append(rs, fmt.Sprintf("* %-76s *", "EDIT DISTANCE CHECKS"))
@@ -3270,6 +3238,11 @@ func levencheck(suspects []string) []string {
 	var levreported map[string]int
 	levreported = make(map[string]int)
 	// for each suspect word, check against all words.
+
+	if p.Debug {
+		fmt.Printf("suspects, okwords: %d, %d\n", len(suspects), len(wordListMapCount))
+	}
+
 	for _, suspect := range suspects {
 		suspectlc := strings.ToLower(suspect)
 
@@ -3378,14 +3351,6 @@ func jeebies() []string {
 
 	rs := []string{} // empty rs to start aggregation
 	rs = append(rs, "☳<a name='jeebi'></a>")
-
-	if p.Nojeeb {
-		rs = append(rs, "☲"+strings.Repeat("*", 80))
-		rs = append(rs, fmt.Sprintf("* %-76s *", "Jeebies report disabled"))
-		rs = append(rs, strings.Repeat("*", 80)+"☷")
-		rs = append(rs, "")
-		return rs
-	}	
 
 	rs = append(rs, "☳"+strings.Repeat("*", 80))
 	rs = append(rs, fmt.Sprintf("* %-76s *", "JEEBIES REPORT"))
@@ -3783,13 +3748,9 @@ func doparams() params {
 	flag.StringVar(&p.GWFilename, "g", "", "good words file")
 	flag.StringVar(&p.SelectedTests, "t", "a", "tests to run")
 	flag.BoolVar(&p.Experimental, "x", false, "experimental (developer use)")
-	flag.BoolVar(&p.Nolev, "d", false, "do not run Levenshtein distance tests")
-	flag.BoolVar(&p.Nosqc, "q", false, "do not run smart quote checks")
-	flag.BoolVar(&p.Nospell, "s", false, "do not run spellcheck")
-	flag.BoolVar(&p.Nojeeb, "j", false, "do not run jeebies")
 	flag.BoolVar(&p.Verbose, "v", false, "Verbose operation")
 	flag.BoolVar(&p.Revision, "r", false, "return Revision number")
-	flag.BoolVar(&p.Debug, "c", false, "Debug flag")
+	flag.BoolVar(&p.Debug, "d", false, "Debug flag")
 	flag.Parse()
 	return p
 }
