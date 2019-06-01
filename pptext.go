@@ -33,6 +33,7 @@ license:   GPL
             j: jeebies
 2019.05.19  corrected good word list count calculation
 2019.05.26  use \P{L} for word boundary in (2) text checks
+2019.05.31  verbose flag honored in text-check
 */
 
 package main
@@ -56,7 +57,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.05.26"
+const VERSION string = "2019.05.31"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -1265,7 +1266,7 @@ func tcHypSpaceConsistency2(wb []string, pb []string) []string {
 						wwhi, _ := strconv.Atoi(wwh)
 						rs = append(rs, fmt.Sprintf("%6s: %s", wwh, wbuf[wwhi]))
 						cwhyp += 1
-						if cwhyp == 5 {
+						if !p.Verbose && cwhyp == 5 {
 							rs = append(rs, "        ... more")
 							break
 						}
@@ -1277,7 +1278,7 @@ func tcHypSpaceConsistency2(wb []string, pb []string) []string {
 				if cwohyp < 5 {
 					rs = append(rs, fmt.Sprintf("%6d: %s", i, line))	
 				}
-				if cwohyp == 5 {
+				if !p.Verbose && cwohyp == 5 {
 					rs = append(rs, "        ... more")
 				}		
 			}
