@@ -34,6 +34,7 @@ license:   GPL
 2019.05.19  corrected good word list count calculation
 2019.05.26  use \P{L} for word boundary in (2) text checks
 2019.05.31  verbose flag honored in text-check
+2019.06.06  off-by-one in dash check adjusted
 */
 
 package main
@@ -57,7 +58,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.05.31"
+const VERSION string = "2019.06.06"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -1613,7 +1614,6 @@ func tcDashCheck(wb []string, pb []string) []string {
 					rs = append(rs, s)
 				}
 				count++
-
 			}
 			count++
 		}
@@ -1622,13 +1622,13 @@ func tcDashCheck(wb []string, pb []string) []string {
 		thisReportCount = 0
 		rs = append(rs, "  hyphen-minus:")
 		for _, s := range a_hm {
-			thisReportCount++
 			if !p.Verbose && thisReportCount == 10 {
 				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_hm)-10))
 			}
 			if p.Verbose || thisReportCount < 10 {
 				rs = append(rs, s)
 			}
+			thisReportCount++
 			count++
 
 		}
@@ -1636,27 +1636,26 @@ func tcDashCheck(wb []string, pb []string) []string {
 	if len(a_hy) > 0 {
 		rs = append(rs, "  hyphen:")
 		for _, s := range a_hy {
-			thisReportCount++
 			if !p.Verbose && thisReportCount == 10 {
 				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_hy)-10))
 			}
 			if p.Verbose || thisReportCount < 10 {
 				rs = append(rs, s)
 			}
+			thisReportCount++
 			count++
-
 		}
 	}
 	if len(a_nb) > 0 {
 		rs = append(rs, "  non-breaking hyphen:")
 		for _, s := range a_nb {
-			thisReportCount++
 			if !p.Verbose && thisReportCount == 10 {
 				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_nb)-10))
 			}
 			if p.Verbose || thisReportCount < 10 {
 				rs = append(rs, s)
 			}
+			thisReportCount++
 			count++
 
 		}
@@ -1664,52 +1663,52 @@ func tcDashCheck(wb []string, pb []string) []string {
 	if len(a_fd) > 0 {
 		rs = append(rs, "  figure dash:")
 		for _, s := range a_fd {
-			thisReportCount++
 			if !p.Verbose && thisReportCount == 10 {
 				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_fd)-10))
 			}
 			if p.Verbose || thisReportCount < 10 {
 				rs = append(rs, s)
 			}
+			thisReportCount++
 			count++
 		}
 	}
 	if len(a_en) > 0 {
 		rs = append(rs, "  en-dash:")
 		for _, s := range a_en {
-			thisReportCount++
 			if !p.Verbose && thisReportCount == 10 {
 				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_en)-10))
 			}
 			if p.Verbose || thisReportCount < 10 {
 				rs = append(rs, s)
 			}
+			thisReportCount++
 			count++
 		}
 	}
 	if len(a_em) > 0 {
 		rs = append(rs, "  em-dash:")
 		for _, s := range a_em {
-			thisReportCount++
 			if !p.Verbose && thisReportCount == 10 {
 				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_em)-10))
 			}
 			if p.Verbose || thisReportCount < 10 {
 				rs = append(rs, s)
 			}
+			thisReportCount++
 			count++
 		}
 	}
 	if len(a_un) > 0 {
 		rs = append(rs, "  unrecognized dash:")
 		for _, s := range a_un {
-			thisReportCount++
 			if !p.Verbose && thisReportCount == 10 {
 				rs = append(rs, fmt.Sprintf("     ... %d more", len(a_un)-10))
 			}
 			if p.Verbose || thisReportCount < 10 {
 				rs = append(rs, s)
 			}
+			thisReportCount++
 			count++
 		}
 	}
