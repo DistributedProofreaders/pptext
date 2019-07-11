@@ -35,6 +35,7 @@ license:   GPL
 2019.05.26  use \P{L} for word boundary in (2) text checks
 2019.05.31  verbose flag honored in text-check
 2019.06.06  off-by-one in dash check adjusted
+2019.07.10  scanno check now case insensitive
 */
 
 package main
@@ -58,7 +59,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.06.06"
+const VERSION string = "2019.07.10"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -3629,13 +3630,17 @@ func readScannos(infile string) []string {
 	swl := []string{} // scanno word list
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		swl = append(swl, scanner.Text())
+	    scoword := scanner.Text()
+		swl = append(swl, scoword)
+		swl = append(swl, strings.Title(strings.ToLower(scoword)))
+		swl = append(swl, strings.ToUpper(strings.ToLower(scoword)))
 	}
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
 	// remove BOM if present
 	swl[0] = strings.TrimPrefix(swl[0], BOM)
+	fmt.Println(swl) ////
 	return swl
 }
 
