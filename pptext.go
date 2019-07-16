@@ -36,6 +36,8 @@ license:   GPL
 2019.05.31  verbose flag honored in text-check
 2019.06.06  off-by-one in dash check adjusted
 2019.07.10  scanno check now case insensitive
+2019.07.12  numeric scannos checked once
+2019.07.15  added para ends with comma
 */
 
 package main
@@ -59,7 +61,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.07.10"
+const VERSION string = "2019.07.15"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -2765,6 +2767,12 @@ func tcGutChecks(wb []string) []string {
 	re0021e := regexp.MustCompile(`(^|\P{L})\p{Nd}*1\p{Nd}th(\P{L}|$)`)
 	re0021f := regexp.MustCompile(`(^|\P{L})\p{Nd}*[23]d(\P{L}|$)`)
 
+    for n, line := range wb {
+        if n < len(wb) -1 && strings.HasSuffix(line, ",") && wb[n+1] == "" {
+            gcreports = append(gcreports, reportln{"paragraph ends in comma", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
+        }
+    }
+
 	for n, line := range wb {
 
 		if re0021.MatchString(line) &&
@@ -3632,15 +3640,20 @@ func readScannos(infile string) []string {
 	for scanner.Scan() {
 	    scoword := scanner.Text()
 		swl = append(swl, scoword)
-		swl = append(swl, strings.Title(strings.ToLower(scoword)))
-		swl = append(swl, strings.ToUpper(strings.ToLower(scoword)))
+		v1 := strings.Title(strings.ToLower(scoword))
+		if v1 != scoword {
+		    swl = append(swl, v1)
+		}
+		v1 = strings.ToUpper(strings.ToLower(scoword))
+		if v1 != scoword {
+		    swl = append(swl, v1)
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
 	// remove BOM if present
 	swl[0] = strings.TrimPrefix(swl[0], BOM)
-	fmt.Println(swl) ////
 	return swl
 }
 
