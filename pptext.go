@@ -38,7 +38,7 @@ license:   GPL
 2019.07.10  scanno check now case insensitive
 2019.07.12  numeric scannos checked once
 2019.07.15  added para ends with comma
-2019.08.15  changed handling of hyphenated words in lookup
+2019.08.15  changed handling of hyphenated words in lookup; added "am./a. m." checks
 */
 
 package main
@@ -2174,6 +2174,36 @@ func tcBookLevel(wb []string) []string {
 		rs = append(rs, "  both straight and curly ◨double◧ quotes found in text")
 		count++
 	}
+
+	// ----- check "a. m." and "a.m." (and similar) mixed -----
+	cam, cams, cpm, cpms := 0,0,0,0
+	re01a := regexp.MustCompile(`(?i)a\.m\.`)
+	re02a := regexp.MustCompile(`(?i)a\.\s+m\.`)
+	re03a := regexp.MustCompile(`(?i)p\.m\.`)
+	re04a := regexp.MustCompile(`(?i)p\.\s+m\.`)
+	for _, line := range wb {
+	    cam += len(re01a.FindAllString(line, -1))
+	    cams += len(re02a.FindAllString(line, -1))
+	    cpm += len(re03a.FindAllString(line, -1))
+	    cpms += len(re04a.FindAllString(line, -1))
+	}
+	
+	if (cam > 0 && cams > 0) || (cpm > 0 && cpms > 0) {
+		rs = append(rs, "")
+	}
+	if cam > 0 && cams > 0 {
+		rs = append(rs, "  ☱both \"a.m.\" and \"a. m.\" found in text☷")
+		count++
+	}
+	if cpm > 0 && cpms > 0 {
+		rs = append(rs, "  ☱both \"p.m.\" and \"p. m.\" found in text☷")
+		count++
+	}
+	if p.Verbose {
+		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "a.m.", cam, "p.m.", cpm))
+		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "a. m.", cams, "p. m.", cpms))
+		rs = append(rs, "")
+	}	
 
 	// ----- check to-day and today mixed -----
 
