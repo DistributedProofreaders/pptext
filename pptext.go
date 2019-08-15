@@ -38,6 +38,7 @@ license:   GPL
 2019.07.10  scanno check now case insensitive
 2019.07.12  numeric scannos checked once
 2019.07.15  added para ends with comma
+2019.08.15  changed handling of hyphenated words in lookup
 */
 
 package main
@@ -61,7 +62,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.07.15"
+const VERSION string = "2019.08.15"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -999,8 +1000,12 @@ func aspellCheck() ([]string, []string, []string) {
 		} else {
 			// in line map word is burst by hyphens
 			// sésame-ouvre-toi not found in map
-			// [2806 1507,1658,2533,2806 1333,1371,2806,3196,3697]
-			// find a number that's in all three (2806)
+                        // but the individual words are:
+                        // sésame 2806
+                        // ouvre 1507,1658,2533,2806
+			// toi 1333,1371,2806,3196,3697
+			// find a line number that's in all three (2806)
+                        // and report that line
 			pcs := strings.Split(word, "-")
 			// find all lines with first word
 
@@ -1013,7 +1018,11 @@ func aspellCheck() ([]string, []string, []string) {
 				}
 			}
 			// if many matches, it probably should not be reported at all.
-			if lnum, err := strconv.Atoi(t55[0]); err == nil {
+                        if len(t55) == 0 {
+                            rs = rs[:len(rs)-2] // back this one off rs
+                            break
+                        }
+                        if lnum, err := strconv.Atoi(t55[0]); err == nil {
 				rs = append(rs, fmt.Sprintf("  %6s: %s", t55[0], pt(wbuf[lnum-1]) ))
 			} else {
 				rs = rs[:len(rs)-2] // back this one off rs
