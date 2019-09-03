@@ -39,6 +39,7 @@ license:   GPL
 2019.07.12  numeric scannos checked once
 2019.07.15  added para ends with comma
 2019.08.15  changed handling of hyphenated words in lookup; added "am./a. m." checks
+2019.09.02  spacing in book-level checks
 */
 
 package main
@@ -62,7 +63,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.08.15"
+const VERSION string = "2019.09.02"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -2163,17 +2164,24 @@ func tcBookLevel(wb []string) []string {
 	rs = append(rs, "----- book level checks -----------------------------------------------")
 	rs = append(rs, "")
 	count := 0
-
+        needsep := false
 	// check: straight and curly quotes mixed
 	if m['\''] > 0 && (m['‘'] > 0 || m['’'] > 0) {
 		rs = append(rs, "  both straight and curly ◨single◧ quotes found in text")
 		count++
+                needsep = true
 	}
 
 	if m['"'] > 0 && (m['“'] > 0 || m['”'] > 0) {
 		rs = append(rs, "  both straight and curly ◨double◧ quotes found in text")
 		count++
+                needsep = true
 	}
+
+        if needsep {
+            rs = append(rs, "")
+            needsep = false
+        }
 
 	// ----- check "a. m." and "a.m." (and similar) mixed -----
 	cam, cams, cpm, cpms := 0,0,0,0
@@ -2187,26 +2195,27 @@ func tcBookLevel(wb []string) []string {
 	    cpm += len(re03a.FindAllString(line, -1))
 	    cpms += len(re04a.FindAllString(line, -1))
 	}
-	
-	if (cam > 0 && cams > 0) || (cpm > 0 && cpms > 0) {
-		rs = append(rs, "")
-	}
 	if cam > 0 && cams > 0 {
-		rs = append(rs, "  ☱both \"a.m.\" and \"a. m.\" found in text☷")
+		rs = append(rs, "  both \"a.m.\" and \"a. m.\" found in text")
 		count++
+                needsep = true
 	}
 	if cpm > 0 && cpms > 0 {
-		rs = append(rs, "  ☱both \"p.m.\" and \"p. m.\" found in text☷")
+		rs = append(rs, "  both \"p.m.\" and \"p. m.\" found in text")
 		count++
+                needsep = true
 	}
 	if p.Verbose {
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "a.m.", cam, "p.m.", cpm))
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "a. m.", cams, "p. m.", cpms))
-		rs = append(rs, "")
-	}	
+                needsep = true
+	}
+        if needsep {
+            rs = append(rs, "")
+            needsep = false
+        }
 
 	// ----- check to-day and today mixed -----
-
 	ctoday, ctohday, ctonight, ctohnight, ctomorrow, ctohmorrow := 0, 0, 0, 0, 0, 0
 	re01 := regexp.MustCompile(`(?i)today`)
 	re02 := regexp.MustCompile(`(?i)to-day`)
@@ -2222,32 +2231,35 @@ func tcBookLevel(wb []string) []string {
 		ctomorrow += len(re05.FindAllString(line, -1))
 		ctohmorrow += len(re06.FindAllString(line, -1))
 	}
-
-	if (ctoday > 0 && ctohday > 0) || (ctonight > 0 && ctohnight > 0) || (ctomorrow > 0 && ctohmorrow > 0) {
-		rs = append(rs, "")
-	}
 	if ctoday > 0 && ctohday > 0 {
-		rs = append(rs, "  ☱both \"today\" and \"to-day\" found in text☷")
+		// rs = append(rs, "  ☱both \"today\" and \"to-day\" found in text☷")
+                rs = append(rs, "  both \"today\" and \"to-day\" found in text")
 		count++
+                needsep = true
 	}
 	if ctonight > 0 && ctohnight > 0 {
-		rs = append(rs, "  ☱both \"tonight\" and \"to-night\" found in text☷")
+		rs = append(rs, "  both \"tonight\" and \"to-night\" found in text")
 		count++
+                needsep = true
 	}
 	if ctomorrow > 0 && ctohmorrow > 0 {
-		rs = append(rs, "  ☱both \"tomorrow\" and \"to-morrow\" found in text☷")
+		rs = append(rs, "  both \"tomorrow\" and \"to-morrow\" found in text")
 		count++
+                needsep = true
 	}
 	if p.Verbose {
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "today", ctoday, "tonight", ctonight,
 			"tomorrow", ctomorrow))
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "to-day", ctohday, "to-night", ctohnight,
 			"to-morrow", ctohmorrow))
-		rs = append(rs, "")
+                needsep = true
 	}
+        if needsep {
+            rs = append(rs, "")
+            needsep = false
+        }
 
 	// ----- check American and British title punctuation mixed -----
-
 	re01 = regexp.MustCompile(`(?i)\P{L}Mr\.`)
 	re02 = regexp.MustCompile(`(?i)\P{L}Mr\p{Zs}`)
 	re03 = regexp.MustCompile(`(?i)\P{L}Mrs\.`)
@@ -2268,32 +2280,36 @@ func tcBookLevel(wb []string) []string {
 	mabreported := false
 	if count_mr_period > 0 && count_mr_space > 0 {
 		rs = append(rs,
-			fmt.Sprintf("  ☱both \"Mr.\" (%d) and \"Mr\" (%d) found in text☷",
+			fmt.Sprintf("  both \"Mr.\" (%d) and \"Mr\" (%d) found in text",
 				count_mr_period, count_mr_space))
 		count++
 		mabreported = true
+                needsep = true
 	}
 	if count_mrs_period > 0 && count_mrs_space > 0 {
 		rs = append(rs,
-			fmt.Sprintf("  ☱both \"Mrs.\" (%d) and \"Mrs\" (%d) found in text☷",
+			fmt.Sprintf("  both \"Mrs.\" (%d) and \"Mrs\" (%d) found in text",
 				count_mrs_period, count_mrs_space))
 		count++
 		mabreported = true
+                needsep = true
 	}
 	if count_dr_period > 0 && count_dr_space > 0 {
 		rs = append(rs,
-			fmt.Sprintf("  ☱both \"Dr.\" (%d) and \"Dr\" (%d) found in text☷",
+			fmt.Sprintf("  both \"Dr.\" (%d) and \"Dr\" (%d) found in text",
 				count_dr_period, count_dr_space))
 		count++
 		mabreported = true
+                needsep = true
 	}
 	// if mixed and not already reported
 	showmaball := false
 	if !mabreported && (count_mr_period+count_mrs_period+count_dr_period > 0) &&
 		(count_mr_space+count_mrs_space+count_dr_space > 0) {
-		rs = append(rs, "  ☱mixed American and British title punctuation☷")
+		rs = append(rs, "  mixed American and British title punctuation")
 		count++
 		showmaball = true
+                needsep = true
 	}
 
 	if p.Verbose || showmaball {
@@ -2301,7 +2317,12 @@ func tcBookLevel(wb []string) []string {
 			"Dr", count_dr_space))
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "Mr.", count_mr_period, "Mrs.", count_mrs_period,
 			"Dr.", count_dr_period))
+                needsep = true
 	}
+        if needsep {
+            rs = append(rs, "")
+            needsep = false
+        }
 
 	// ----- apostrophes and turned commas -----
 	countm1, countm2 := 0, 0
@@ -2319,7 +2340,12 @@ func tcBookLevel(wb []string) []string {
 	if countm1 > 0 && countm2 > 0 {
 		rs = append(rs, "  both apostrophes and turned commas appear in text")
 		count++
+                needsep = true
 	}
+        if needsep {
+            rs = append(rs, "")
+            needsep = false
+        }
 
 	// check for repeated lines at least 5 characters long.
 	limit := len(wb) - 1
@@ -2331,8 +2357,13 @@ func tcBookLevel(wb []string) []string {
 			rs = append(rs, "  repeated line:")
 			rs = append(rs, fmt.Sprintf("%8d,%d: %s", n+1, n+2, wb[n])) // 1=based
 			count++
+                        needsep = true
 		}
 	}
+        if needsep {
+            rs = append(rs, "")
+            needsep = false
+        }
 
 	// all tests complete
 
