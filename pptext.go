@@ -40,6 +40,7 @@ license:   GPL
 2019.07.15  added para ends with comma
 2019.08.15  changed handling of hyphenated words in lookup; added "am./a. m." checks
 2019.09.02  spacing in book-level checks
+2020.02.27  added compass direction consistency checks
 */
 
 package main
@@ -63,7 +64,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2019.09.02"
+const VERSION string = "2020.02.27"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -2258,6 +2259,65 @@ func tcBookLevel(wb []string) []string {
             rs = append(rs, "")
             needsep = false
         }
+
+	// ----- check compass directions mixed -----
+    cnortheast, cnorthheast, cnorthwest, cnorthhwest := 0, 0, 0, 0
+    csoutheast, csouthheast, csouthwest, csouthhwest := 0, 0, 0, 0
+
+	re11 := regexp.MustCompile(`(?i)northeast`)
+    re12 := regexp.MustCompile(`(?i)north-east`)
+	re13 := regexp.MustCompile(`(?i)northwest`)
+    re14 := regexp.MustCompile(`(?i)north-west`)
+	re15 := regexp.MustCompile(`(?i)southeast`)
+    re16 := regexp.MustCompile(`(?i)south-east`)
+	re17 := regexp.MustCompile(`(?i)southwest`)
+    re18 := regexp.MustCompile(`(?i)south-west`)
+	
+	for _, line := range wb {
+		cnortheast += len(re11.FindAllString(line, -1))
+		cnorthheast += len(re12.FindAllString(line, -1))
+		cnorthwest += len(re13.FindAllString(line, -1))
+		cnorthhwest += len(re14.FindAllString(line, -1))
+		csoutheast += len(re15.FindAllString(line, -1))
+		csouthheast += len(re16.FindAllString(line, -1))
+		csouthwest += len(re17.FindAllString(line, -1))
+		csouthhwest += len(re18.FindAllString(line, -1))
+	}
+	if cnortheast > 0 && cnorthheast > 0 {
+		// rs = append(rs, "  ☱both \"northeast\" and \"north-east\" found in text☷")
+        rs = append(rs, "  both \"northeast\" and \"north-east\" found in text")
+		count++
+        needsep = true
+	}
+	if cnorthwest > 0 && cnorthhwest > 0 {
+		// rs = append(rs, "  ☱both \"northwest\" and \"north-west\" found in text☷")
+        rs = append(rs, "  both \"northwest\" and \"north-west\" found in text")
+		count++
+        needsep = true
+	}
+	if csoutheast > 0 && csouthheast > 0 {
+		// rs = append(rs, "  ☱both \"southeast\" and \"south-east\" found in text☷")
+        rs = append(rs, "  both \"southeast\" and \"south-east\" found in text")
+		count++
+        needsep = true
+	}
+	if csouthwest > 0 && csouthhwest > 0 {
+		// rs = append(rs, "  ☱both \"southwest\" and \"south-west\" found in text☷")
+        rs = append(rs, "  both \"southwest\" and \"south-west\" found in text")
+		count++
+        needsep = true
+	}
+	if p.Verbose {
+		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "northeast", cnortheast, "north-east", cnorthheast))
+		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "northwest", cnorthwest, "north-west", cnorthhwest))
+		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "southeast", csoutheast, "south-east", csouthheast))
+		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "southwest", csouthwest, "south-west", csouthhwest))
+        needsep = true
+	}
+    if needsep {
+        rs = append(rs, "")
+        needsep = false
+    }
 
 	// ----- check American and British title punctuation mixed -----
 	re01 = regexp.MustCompile(`(?i)\P{L}Mr\.`)
