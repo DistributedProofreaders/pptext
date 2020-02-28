@@ -2283,31 +2283,18 @@ func tcBookLevel(wb []string) []string {
 		csouthwest += len(re17.FindAllString(line, -1))
 		csouthhwest += len(re18.FindAllString(line, -1))
 	}
-	if cnortheast > 0 && cnorthheast > 0 {
-		// rs = append(rs, "  ☱both \"northeast\" and \"north-east\" found in text☷")
-        rs = append(rs, "  both \"northeast\" and \"north-east\" found in text")
-		count++
+	
+	cnh := cnortheast + cnorthwest + csoutheast + csouthwest
+	cwh := cnorthheast + cnorthhwest + csouthheast + csouthhwest
+	cshow := false
+	if cnh > 0 && cwh > 0 {
+        rs = append(rs, "compass direction hyphenation inconsistency")
         needsep = true
-	}
-	if cnorthwest > 0 && cnorthhwest > 0 {
-		// rs = append(rs, "  ☱both \"northwest\" and \"north-west\" found in text☷")
-        rs = append(rs, "  both \"northwest\" and \"north-west\" found in text")
-		count++
-        needsep = true
-	}
-	if csoutheast > 0 && csouthheast > 0 {
-		// rs = append(rs, "  ☱both \"southeast\" and \"south-east\" found in text☷")
-        rs = append(rs, "  both \"southeast\" and \"south-east\" found in text")
-		count++
-        needsep = true
-	}
-	if csouthwest > 0 && csouthhwest > 0 {
-		// rs = append(rs, "  ☱both \"southwest\" and \"south-west\" found in text☷")
-        rs = append(rs, "  both \"southwest\" and \"south-west\" found in text")
-		count++
-        needsep = true
-	}
-	if p.Verbose {
+        cshow = true
+        count += 1
+    }
+        
+	if cshow || p.Verbose {
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "northeast", cnortheast, "north-east", cnorthheast))
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "northwest", cnorthwest, "north-west", cnorthhwest))
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "southeast", csoutheast, "south-east", csouthheast))
