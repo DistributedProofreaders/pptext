@@ -41,6 +41,7 @@ license:   GPL
 2019.08.15  changed handling of hyphenated words in lookup; added "am./a. m." checks
 2019.09.02  spacing in book-level checks
 2020.02.27  added compass direction consistency checks
+2020.07.05  character checks bug on same line as &c fixed
 */
 
 package main
@@ -64,7 +65,7 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2020.02.27"
+const VERSION string = "2020.07.05"
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -2075,7 +2076,8 @@ func tcLetterChecks(wb []string) []string {
 			count += 1
 			for n, line := range wb {
 				// make exception for "&c"
-				if strings.ContainsRune(line, kv.Key) && !strings.Contains(line, "&c") {
+				// testline := strings.Replace(line, "&", "", -1)
+ 				if strings.ContainsRune(line, kv.Key) {
 					if p.Verbose || reportcount < 2 {
 						// highlight suspect character in red
 						line = strings.Replace(line, string(kv.Key), "☰"+string(kv.Key)+"☷", -1)
