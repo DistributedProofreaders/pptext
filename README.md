@@ -9,3 +9,7 @@ To build the `pptext`  binary:
 
     go build pptext.go
 
+## Dependencies
+
+aspell needs to be installed, as well as aspell dictionaries for desired
+languages.
