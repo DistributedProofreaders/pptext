@@ -65,7 +65,11 @@ import (
 	"unicode/utf8"
 )
 
-const VERSION string = "2020.07.05"
+var (
+	gitHash   string // git hash when the exec was built
+	buildTime string // time when when the exec was built
+)
+
 const SHOWTIMING bool = false
 
 var sw []string      // suspect words list
@@ -3908,7 +3912,8 @@ func main() {
 	p = doparams() // parse command line parameters
 
 	if p.Revision {
-		fmt.Println(VERSION)
+		fmt.Println("Version:", gitHash)
+		fmt.Println("  Built:", buildTime)
 		return
 	}
 
@@ -3923,7 +3928,7 @@ func main() {
 
 	pptr = append(pptr, fmt.Sprintf("encoding: %s", strings.TrimSpace(o2[1])))
 
-	pptr = append(pptr, fmt.Sprintf("pptext version: %s", VERSION))
+	pptr = append(pptr, fmt.Sprintf("pptext version: %s @ %s", gitHash, buildTime))
 
 	f, _ := os.Create(p.Outdir + "/runlog.txt")
 	f.WriteString("started: " + time.Now().In(loc).Format(time.RFC850) + "\n")
