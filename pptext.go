@@ -3914,8 +3914,7 @@ func main() {
 
 	pptr = append(pptr, fmt.Sprintf("☲processing file: %s", path.Base(p.Infile)))
 
-	mycommand := fmt.Sprintf("file %s", p.Infile)
-	out, err := exec.Command("bash", "-c", mycommand).Output()
+	out, err := exec.Command("file", p.Infile).Output()
 	if err != nil {
 		log.Fatal(err)
 	}
