@@ -23,13 +23,13 @@ license:   GPL
 2019.05.14  hook for skipping hyphenation checks (filename start with "%")
             corrections to parsing for Dr, etc.
 2019.05.16  user can choose selected tests. default is "a" (all)
-            tests are 
+            tests are
             q: smart quote scan
             s: spellcheck
             e: edit distance
             t: text checks
-	            1: tcHypConsistency subtest
-    	        2: tcHypSpaceConsistency2 subtest
+            1: tcHypConsistency subtest
+            2: tcHypSpaceConsistency2 subtest
             j: jeebies
 2019.05.19  corrected good word list count calculation
 2019.05.26  use \P{L} for word boundary in (2) text checks
@@ -224,15 +224,15 @@ func wraptext2(s string) string {
 /* ********************************************************************** */
 
 type params struct {
-	Infile       string
-	Outdir       string // target directory
-	Wlang        string
-	Alang        string
-	GWFilename   string
-	Experimental bool
-	Verbose      bool
-	Revision	 bool
-	Debug		 bool
+	Infile        string
+	Outdir        string // target directory
+	Wlang         string
+	Alang         string
+	GWFilename    string
+	Experimental  bool
+	Verbose       bool
+	Revision      bool
+	Debug         bool
 	SelectedTests string // a=all, b-z0-9=selected tests
 }
 
@@ -1003,12 +1003,12 @@ func aspellCheck() ([]string, []string, []string) {
 		} else {
 			// in line map word is burst by hyphens
 			// sésame-ouvre-toi not found in map
-                        // but the individual words are:
-                        // sésame 2806
-                        // ouvre 1507,1658,2533,2806
+			// but the individual words are:
+			// sésame 2806
+			// ouvre 1507,1658,2533,2806
 			// toi 1333,1371,2806,3196,3697
 			// find a line number that's in all three (2806)
-                        // and report that line
+			// and report that line
 			pcs := strings.Split(word, "-")
 			// find all lines with first word
 
@@ -1021,12 +1021,12 @@ func aspellCheck() ([]string, []string, []string) {
 				}
 			}
 			// if many matches, it probably should not be reported at all.
-                        if len(t55) == 0 {
-                            rs = rs[:len(rs)-2] // back this one off rs
-                            break
-                        }
-                        if lnum, err := strconv.Atoi(t55[0]); err == nil {
-				rs = append(rs, fmt.Sprintf("  %6s: %s", t55[0], pt(wbuf[lnum-1]) ))
+			if len(t55) == 0 {
+				rs = rs[:len(rs)-2] // back this one off rs
+				break
+			}
+			if lnum, err := strconv.Atoi(t55[0]); err == nil {
+				rs = append(rs, fmt.Sprintf("  %6s: %s", t55[0], pt(wbuf[lnum-1])))
 			} else {
 				rs = rs[:len(rs)-2] // back this one off rs
 			}
@@ -1219,7 +1219,7 @@ func tcHypConsistency(wb []string) []string {
 						}
 
 					}
-					rs = append(rs, "")  // separate reports
+					rs = append(rs, "") // separate reports
 				}
 			}
 		}
@@ -1237,7 +1237,6 @@ func tcHypConsistency(wb []string) []string {
 	return rs
 }
 
-
 // completely rewritten for memory-usage minimization
 
 func tcHypSpaceConsistency2(wb []string, pb []string) []string {
@@ -1246,13 +1245,13 @@ func tcHypSpaceConsistency2(wb []string, pb []string) []string {
 	rs = append(rs, "----- hyphenation and spaced pair check ---------------------------------------")
 	rs = append(rs, "")
 
-	cwmap := map[string]string{}  // map of all singly-hyphenated words
+	cwmap := map[string]string{} // map of all singly-hyphenated words
 	// find hyphenated words
 	re01 := regexp.MustCompile(`(?i)(\p{L}+)-(\p{L}+)-?(\p{L}+)?-?(\p{L}+)?`)
 
-	for i, line := range wbuf {  // no hyphenation over line break
+	for i, line := range wbuf { // no hyphenation over line break
 		t := re01.FindAllStringSubmatch(line, -1)
-		for _,u := range t {
+		for _, u := range t {
 			if _, ok := cwmap[strings.ToLower(u[0])]; ok {
 				// it is in the map already, add line number
 				cwmap[strings.ToLower(u[0])] += fmt.Sprintf(",%d", i)
@@ -1265,12 +1264,12 @@ func tcHypSpaceConsistency2(wb []string, pb []string) []string {
 	for k, _ := range cwmap {
 		t = append(t, k)
 	}
-	for _, lookfor := range(t) {
+	for _, lookfor := range t {
 		reported := false
 		lookfors := strings.Replace(lookfor, "-", " ", -1)
-		re02 := regexp.MustCompile(`(?i)\P{L}`+lookfors+`\P{L}`)
+		re02 := regexp.MustCompile(`(?i)\P{L}` + lookfors + `\P{L}`)
 		cwohyp := 0
-		for i,line := range wbuf {
+		for i, line := range wbuf {
 			t2 := re02.FindAllStringSubmatch(line, -1)
 			if t2 != nil {
 				if !reported {
@@ -1288,15 +1287,15 @@ func tcHypSpaceConsistency2(wb []string, pb []string) []string {
 						}
 					}
 					rs = append(rs, "      ---")
-					reported = true				
+					reported = true
 				}
 				cwohyp += 1
 				if cwohyp < 5 {
-					rs = append(rs, fmt.Sprintf("%6d: %s", i, line))	
+					rs = append(rs, fmt.Sprintf("%6d: %s", i, line))
 				}
 				if !p.Verbose && cwohyp == 5 {
 					rs = append(rs, "        ... more")
-				}		
+				}
 			}
 		}
 		if reported {
@@ -2077,12 +2076,12 @@ func tcLetterChecks(wb []string) []string {
 			for n, line := range wb {
 				// make exception for "&c"
 				// testline := strings.Replace(line, "&", "", -1)
- 				if strings.ContainsRune(line, kv.Key) {
+				if strings.ContainsRune(line, kv.Key) {
 					if p.Verbose || reportcount < 2 {
 						// highlight suspect character in red
 						line = strings.Replace(line, string(kv.Key), "☰"+string(kv.Key)+"☷", -1)
 						line = strings.Replace(line, "<", "&lt;", -1)
-						line = strings.Replace(line, ">", "&gt;", -1)					
+						line = strings.Replace(line, ">", "&gt;", -1)
 						rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, pt(line))) // 1=based
 					}
 					reportcount++
@@ -2167,56 +2166,56 @@ func tcBookLevel(wb []string) []string {
 	rs = append(rs, "----- book level checks -----------------------------------------------")
 	rs = append(rs, "")
 	count := 0
-        needsep := false
+	needsep := false
 	// check: straight and curly quotes mixed
 	if m['\''] > 0 && (m['‘'] > 0 || m['’'] > 0) {
 		rs = append(rs, "  both straight and curly ◨single◧ quotes found in text")
 		count++
-                needsep = true
+		needsep = true
 	}
 
 	if m['"'] > 0 && (m['“'] > 0 || m['”'] > 0) {
 		rs = append(rs, "  both straight and curly ◨double◧ quotes found in text")
 		count++
-                needsep = true
+		needsep = true
 	}
 
-        if needsep {
-            rs = append(rs, "")
-            needsep = false
-        }
+	if needsep {
+		rs = append(rs, "")
+		needsep = false
+	}
 
 	// ----- check "a. m." and "a.m." (and similar) mixed -----
-	cam, cams, cpm, cpms := 0,0,0,0
+	cam, cams, cpm, cpms := 0, 0, 0, 0
 	re01a := regexp.MustCompile(`(?i)a\.m\.`)
 	re02a := regexp.MustCompile(`(?i)a\.\s+m\.`)
 	re03a := regexp.MustCompile(`(?i)p\.m\.`)
 	re04a := regexp.MustCompile(`(?i)p\.\s+m\.`)
 	for _, line := range wb {
-	    cam += len(re01a.FindAllString(line, -1))
-	    cams += len(re02a.FindAllString(line, -1))
-	    cpm += len(re03a.FindAllString(line, -1))
-	    cpms += len(re04a.FindAllString(line, -1))
+		cam += len(re01a.FindAllString(line, -1))
+		cams += len(re02a.FindAllString(line, -1))
+		cpm += len(re03a.FindAllString(line, -1))
+		cpms += len(re04a.FindAllString(line, -1))
 	}
 	if cam > 0 && cams > 0 {
 		rs = append(rs, "  both \"a.m.\" and \"a. m.\" found in text")
 		count++
-                needsep = true
+		needsep = true
 	}
 	if cpm > 0 && cpms > 0 {
 		rs = append(rs, "  both \"p.m.\" and \"p. m.\" found in text")
 		count++
-                needsep = true
+		needsep = true
 	}
 	if p.Verbose {
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "a.m.", cam, "p.m.", cpm))
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "a. m.", cams, "p. m.", cpms))
-                needsep = true
+		needsep = true
 	}
-        if needsep {
-            rs = append(rs, "")
-            needsep = false
-        }
+	if needsep {
+		rs = append(rs, "")
+		needsep = false
+	}
 
 	// ----- check to-day and today mixed -----
 	ctoday, ctohday, ctonight, ctohnight, ctomorrow, ctohmorrow := 0, 0, 0, 0, 0, 0
@@ -2236,45 +2235,45 @@ func tcBookLevel(wb []string) []string {
 	}
 	if ctoday > 0 && ctohday > 0 {
 		// rs = append(rs, "  ☱both \"today\" and \"to-day\" found in text☷")
-                rs = append(rs, "  both \"today\" and \"to-day\" found in text")
+		rs = append(rs, "  both \"today\" and \"to-day\" found in text")
 		count++
-                needsep = true
+		needsep = true
 	}
 	if ctonight > 0 && ctohnight > 0 {
 		rs = append(rs, "  both \"tonight\" and \"to-night\" found in text")
 		count++
-                needsep = true
+		needsep = true
 	}
 	if ctomorrow > 0 && ctohmorrow > 0 {
 		rs = append(rs, "  both \"tomorrow\" and \"to-morrow\" found in text")
 		count++
-                needsep = true
+		needsep = true
 	}
 	if p.Verbose {
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "today", ctoday, "tonight", ctonight,
 			"tomorrow", ctomorrow))
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "to-day", ctohday, "to-night", ctohnight,
 			"to-morrow", ctohmorrow))
-                needsep = true
+		needsep = true
 	}
-        if needsep {
-            rs = append(rs, "")
-            needsep = false
-        }
+	if needsep {
+		rs = append(rs, "")
+		needsep = false
+	}
 
 	// ----- check compass directions mixed -----
-    cnortheast, cnorthheast, cnorthwest, cnorthhwest := 0, 0, 0, 0
-    csoutheast, csouthheast, csouthwest, csouthhwest := 0, 0, 0, 0
+	cnortheast, cnorthheast, cnorthwest, cnorthhwest := 0, 0, 0, 0
+	csoutheast, csouthheast, csouthwest, csouthhwest := 0, 0, 0, 0
 
 	re11 := regexp.MustCompile(`(?i)northeast`)
-    re12 := regexp.MustCompile(`(?i)north-east`)
+	re12 := regexp.MustCompile(`(?i)north-east`)
 	re13 := regexp.MustCompile(`(?i)northwest`)
-    re14 := regexp.MustCompile(`(?i)north-west`)
+	re14 := regexp.MustCompile(`(?i)north-west`)
 	re15 := regexp.MustCompile(`(?i)southeast`)
-    re16 := regexp.MustCompile(`(?i)south-east`)
+	re16 := regexp.MustCompile(`(?i)south-east`)
 	re17 := regexp.MustCompile(`(?i)southwest`)
-    re18 := regexp.MustCompile(`(?i)south-west`)
-	
+	re18 := regexp.MustCompile(`(?i)south-west`)
+
 	for _, line := range wb {
 		cnortheast += len(re11.FindAllString(line, -1))
 		cnorthheast += len(re12.FindAllString(line, -1))
@@ -2285,28 +2284,28 @@ func tcBookLevel(wb []string) []string {
 		csouthwest += len(re17.FindAllString(line, -1))
 		csouthhwest += len(re18.FindAllString(line, -1))
 	}
-	
+
 	cnh := cnortheast + cnorthwest + csoutheast + csouthwest
 	cwh := cnorthheast + cnorthhwest + csouthheast + csouthhwest
 	cshow := false
 	if cnh > 0 && cwh > 0 {
-        rs = append(rs, "compass direction hyphenation inconsistency")
-        needsep = true
-        cshow = true
-        count += 1
-    }
-        
+		rs = append(rs, "compass direction hyphenation inconsistency")
+		needsep = true
+		cshow = true
+		count += 1
+	}
+
 	if cshow || p.Verbose {
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "northeast", cnortheast, "north-east", cnorthheast))
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "northwest", cnorthwest, "north-west", cnorthhwest))
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "southeast", csoutheast, "south-east", csouthheast))
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d", "southwest", csouthwest, "south-west", csouthhwest))
-        needsep = true
+		needsep = true
 	}
-    if needsep {
-        rs = append(rs, "")
-        needsep = false
-    }
+	if needsep {
+		rs = append(rs, "")
+		needsep = false
+	}
 
 	// ----- check American and British title punctuation mixed -----
 	re01 = regexp.MustCompile(`(?i)\P{L}Mr\.`)
@@ -2333,7 +2332,7 @@ func tcBookLevel(wb []string) []string {
 				count_mr_period, count_mr_space))
 		count++
 		mabreported = true
-                needsep = true
+		needsep = true
 	}
 	if count_mrs_period > 0 && count_mrs_space > 0 {
 		rs = append(rs,
@@ -2341,7 +2340,7 @@ func tcBookLevel(wb []string) []string {
 				count_mrs_period, count_mrs_space))
 		count++
 		mabreported = true
-                needsep = true
+		needsep = true
 	}
 	if count_dr_period > 0 && count_dr_space > 0 {
 		rs = append(rs,
@@ -2349,7 +2348,7 @@ func tcBookLevel(wb []string) []string {
 				count_dr_period, count_dr_space))
 		count++
 		mabreported = true
-                needsep = true
+		needsep = true
 	}
 	// if mixed and not already reported
 	showmaball := false
@@ -2358,7 +2357,7 @@ func tcBookLevel(wb []string) []string {
 		rs = append(rs, "  mixed American and British title punctuation")
 		count++
 		showmaball = true
-                needsep = true
+		needsep = true
 	}
 
 	if p.Verbose || showmaball {
@@ -2366,12 +2365,12 @@ func tcBookLevel(wb []string) []string {
 			"Dr", count_dr_space))
 		rs = append(rs, fmt.Sprintf("%10s: %3d %10s: %3d %10s: %3d ", "Mr.", count_mr_period, "Mrs.", count_mrs_period,
 			"Dr.", count_dr_period))
-                needsep = true
+		needsep = true
 	}
-        if needsep {
-            rs = append(rs, "")
-            needsep = false
-        }
+	if needsep {
+		rs = append(rs, "")
+		needsep = false
+	}
 
 	// ----- apostrophes and turned commas -----
 	countm1, countm2 := 0, 0
@@ -2389,12 +2388,12 @@ func tcBookLevel(wb []string) []string {
 	if countm1 > 0 && countm2 > 0 {
 		rs = append(rs, "  both apostrophes and turned commas appear in text")
 		count++
-                needsep = true
+		needsep = true
 	}
-        if needsep {
-            rs = append(rs, "")
-            needsep = false
-        }
+	if needsep {
+		rs = append(rs, "")
+		needsep = false
+	}
 
 	// check for repeated lines at least 5 characters long.
 	limit := len(wb) - 1
@@ -2406,13 +2405,13 @@ func tcBookLevel(wb []string) []string {
 			rs = append(rs, "  repeated line:")
 			rs = append(rs, fmt.Sprintf("%8d,%d: %s", n+1, n+2, wb[n])) // 1=based
 			count++
-                        needsep = true
+			needsep = true
 		}
 	}
-        if needsep {
-            rs = append(rs, "")
-            needsep = false
-        }
+	if needsep {
+		rs = append(rs, "")
+		needsep = false
+	}
 
 	// all tests complete
 
@@ -2886,11 +2885,11 @@ func tcGutChecks(wb []string) []string {
 	re0021e := regexp.MustCompile(`(^|\P{L})\p{Nd}*1\p{Nd}th(\P{L}|$)`)
 	re0021f := regexp.MustCompile(`(^|\P{L})\p{Nd}*[23]d(\P{L}|$)`)
 
-    for n, line := range wb {
-        if n < len(wb) -1 && strings.HasSuffix(line, ",") && wb[n+1] == "" {
-            gcreports = append(gcreports, reportln{"paragraph ends in comma", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
-        }
-    }
+	for n, line := range wb {
+		if n < len(wb)-1 && strings.HasSuffix(line, ",") && wb[n+1] == "" {
+			gcreports = append(gcreports, reportln{"paragraph ends in comma", fmt.Sprintf("  %5d: %s", n+1, wraptext9(line))})
+		}
+	}
 
 	for n, line := range wb {
 
@@ -3062,7 +3061,7 @@ func tcGutChecks(wb []string) []string {
 			if rpt.rpt != rrpt_last {
 				// a report with a new report type
 				// first one gets new header line
-				rs = append(rs, fmt.Sprintf("%s\n%s", rpt.rpt, rpt.sourceline)) 
+				rs = append(rs, fmt.Sprintf("%s\n%s", rpt.rpt, rpt.sourceline))
 				ctr = 1
 				rrpt_last = rpt.rpt
 				continue
@@ -3416,7 +3415,7 @@ func levencheck(suspects []string) []string {
 			}
 
 			// differ by only hyphenation
-			if strings.Replace(suspectlc,"-","",-1) == strings.Replace(testwordlc,"-","",-1) {
+			if strings.Replace(suspectlc, "-", "", -1) == strings.Replace(testwordlc, "-", "", -1) {
 				continue
 			}
 
@@ -3757,15 +3756,15 @@ func readScannos(infile string) []string {
 	swl := []string{} // scanno word list
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-	    scoword := scanner.Text()
+		scoword := scanner.Text()
 		swl = append(swl, scoword)
 		v1 := strings.Title(strings.ToLower(scoword))
 		if v1 != scoword {
-		    swl = append(swl, v1)
+			swl = append(swl, v1)
 		}
 		v1 = strings.ToUpper(strings.ToLower(scoword))
 		if v1 != scoword {
-		    swl = append(swl, v1)
+			swl = append(swl, v1)
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -3859,7 +3858,7 @@ func readWordList(infile string) ([]string, int) {
 		wd[i] = strings.Replace(word, "'", "’", -1)
 	}
 
-	goodwordsread := len(wd)  // how many user provided (before I augment the list)
+	goodwordsread := len(wd) // how many user provided (before I augment the list)
 
 	// if lower case, add title and upper case
 	// if title case, add upper case
