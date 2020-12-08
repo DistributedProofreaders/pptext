@@ -3917,6 +3917,10 @@ func main() {
 		return
 	}
 
+	if p.Infile == "" {
+		log.Fatal("No input file specified")
+	}
+
 	pptr = append(pptr, fmt.Sprintf("☲processing file: %s", path.Base(p.Infile)))
 
 	mycommand := fmt.Sprintf("file %s", p.Infile)
