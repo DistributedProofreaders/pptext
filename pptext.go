@@ -51,6 +51,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -443,45 +444,17 @@ func Peek() xpuncEvent {
 // return map of only those recognized by aspell
 func asqual(m map[string]int) map[string]int {
 
-	// filenames we will use
-	pid := os.Getpid()
-	fnpidc := fmt.Sprintf("/tmp/%dc.txt", pid) // send words to test
-	fnpidd := fmt.Sprintf("/tmp/%dd.txt", pid) // pick up results
-
-	// write words to test
-	f2, err := os.Create(fnpidc)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// send out the words to test
-	for k, _ := range m {
-		fmt.Fprintf(f2, "%s\n", k)
-	}
-	f2.Close()
-
-	// run aspell
-	mycommand := fmt.Sprintf("cat %s | aspell --encoding='utf-8' --list | sort | uniq > %s", fnpidc, fnpidd)
-	_, err = exec.Command("bash", "-c", mycommand).Output()
-	if err != nil {
-		log.Fatal(err)
+	// build a slice from the map
+	words := make([]string, 0, len(m))
+	for word := range m {
+		words = append(words, word)
 	}
 
-	// get results. any word remaining should not be protected
-	mycommand = fmt.Sprintf("cat %s", fnpidd)
-	out, err := exec.Command("bash", "-c", mycommand).Output()
-	if err != nil {
-		log.Fatal(err)
-	}
+	words = runAspell(words, "")
 
-	// we are done with the temporary files
-	os.Remove(fnpidc)
-	os.Remove(fnpidd)
-
-	// any word in "out" was not recognized by aspell
-	fwords := strings.Split(string(out), "\n")
-	if len(fwords) > 0 {
+	if len(words) > 0 {
 		// some derived words not cleared by aspell
-		for _, s := range fwords {
+		for _, s := range words {
 			delete(m, s) // remove from map
 		}
 	}
@@ -870,60 +843,13 @@ func aspellCheck() ([]string, []string, []string) {
 	//
 	// begin successive aspell runs for each language
 
-	pid := os.Getpid()
-	fnpida := fmt.Sprintf("/tmp/%da.txt", pid)
-	fnpidb := fmt.Sprintf("/tmp/%db.txt", pid)
-
-	// make working copy
-	f2, err := os.Create(fnpida) // specified report file for text output
-	if err != nil {
-		log.Fatal(err)
-	}
-	// send out the good-word protected local working buffer
-	for _, line := range lwbuf {
-		fmt.Fprintf(f2, "%s\r", line)
-	}
-	f2.Close()
-
 	// process with each language specified by user
 	uselangs := strings.Split(p.Alang, ",")
 	for _, rl := range uselangs {
-
-		// note: de-alt not available on machine:galaxy. de-1901 is alternate
-		allowedLang := map[string]int{"en": 1, "en_US": 1, "en_GB": 1, "en_CA": 1,
-			"es": 1, "fr": 1, "de": 1, "de-alt": 1, "it": 1}
-		_, ok := allowedLang[rl]
-		if !ok {
-			log.Fatal(err)
-		}
-
-		// rs = append(rs, fmt.Sprintf("lang used: %s", rl))
-		mycommand := fmt.Sprintf("cat %s | aspell --encoding='utf-8' --lang=%s --list | sort | uniq > %s", fnpida, rl, fnpidb)
-		_, err := exec.Command("bash", "-c", mycommand).Output()
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		mycommand = fmt.Sprintf("cp %s %s", fnpidb, fnpida)
-		_, err = exec.Command("bash", "-c", mycommand).Output()
-		if err != nil {
-			log.Fatal(err)
-		}
+		lwbuf = runAspell(lwbuf, rl)
 	}
 
-	// get resulting suspect word list
-	mycommand := fmt.Sprintf("cat %s", fnpida)
-	out, err := exec.Command("bash", "-c", mycommand).Output()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// we are done with the temporary files
-	os.Remove(fnpida)
-	os.Remove(fnpidb)
-
-	// returns a newline separated string of words flagged by aspell
-	suspect_words := strings.Split(string(out), "\n")
+	suspect_words := lwbuf
 
 	// into slice
 	if len(suspect_words) > 0 {
@@ -3874,6 +3800,50 @@ func readWordList(infile string) ([]string, int) {
 	}
 	wd = append(wd, addwd...)
 	return wd, goodwordsread
+}
+
+// runs aspell on a slice of strings and returns a unique set of those that
+// aspell flags as misspelled. dict is an optional dictionary to use
+func runAspell(words []string, dict string) []string {
+
+	cmd := exec.Command("aspell", "--encoding", "utf-8", "--list")
+
+	if dict != "" {
+		cmd = exec.Command("aspell", "--encoding", "utf-8", "--lang", dict, "--list")
+	}
+
+	// open a pipe to aspell's stdin for our words
+	stdin, err := cmd.StdinPipe()
+	if nil != err {
+		log.Fatalf("Error opening aspell stdin: %s", err)
+	}
+
+	go func() {
+		defer stdin.Close()
+		for _, word := range words {
+			io.WriteString(stdin, word)
+			io.WriteString(stdin, "\n")
+		}
+	}()
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Fatalf("Error running aspell: %s\n%s", err, string(out))
+	}
+	return uniqueStrings(strings.Split(string(out), "\n"))
+}
+
+// Return a unique set of strings out of a string slice
+func uniqueStrings(stringSlice []string) []string {
+	keys := make(map[string]bool)
+	list := []string{}
+	for _, entry := range stringSlice {
+		if _, value := keys[entry]; !value {
+			keys[entry] = true
+			list = append(list, entry)
+		}
+	}
+	return list
 }
 
 func doparams() params {
