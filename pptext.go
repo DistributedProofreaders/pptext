@@ -3300,6 +3300,14 @@ func levencheck(suspects []string) []string {
 		fmt.Printf("suspects, okwords: %d, %d\n", len(suspects), len(wordListMapCount))
 	}
 
+	// created sorted list of words for report determinism
+	sortedWords := make([]string, 0, len(wordListMapCount))
+	for k := range wordListMapCount {
+		sortedWords = append(sortedWords, k)
+	}
+	sort.Strings(sortedWords)
+
+	// suspects are already sorted, courtesy of aspellCheck()
 	for _, suspect := range suspects {
 		suspectlc := strings.ToLower(suspect)
 
@@ -3307,7 +3315,7 @@ func levencheck(suspects []string) []string {
 		suspectlc = strings.Replace(suspectlc, "æ", "a𝚎", -1)
 		suspectlc = strings.Replace(suspectlc, "œ", "o𝚎", -1)
 
-		for testword, _ := range wordListMapCount {
+		for _, testword := range sortedWords {
 			testwordlc := strings.ToLower(testword)
 
 			// have both been already reported
