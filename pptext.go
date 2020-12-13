@@ -3265,40 +3265,14 @@ func levencheck(suspects []string) []string {
 	rs = append(rs, strings.Repeat("*", 80))
 	rs = append(rs, "")
 
-	// wordsonline is a slice. each "line" contains a map of words on that line
-	var wordsonline []map[string]struct{}
-	for n, _ := range wbuf { // on each line
-		rtn := make(map[string]struct{}) // a set; empty structs take no memory
-		for _, word := range lwl[n] {    // get slice of words on the line
-			rtn[word] = struct{}{} // empty struct
-		}
-		wordsonline = append(wordsonline, rtn)
-	}
-
-	// lcwordsonline is a slice. each "line" contains a map of downcased words on that line
-	var lcwordsonline []map[string]struct{}
-	for n, _ := range wbuf { // on each line
-		rtn := make(map[string]struct{}) // a set; empty structs take no memory
-		for _, word := range lwl[n] {    // get slice of words on the line
-			rtn[strings.ToLower(word)] = struct{}{} // empty struct
-		}
-		lcwordsonline = append(lcwordsonline, rtn)
-	}
-
 	nreports := 0
 
 	// build a map to show all words that have been reported
-	var reportd map[string]int
-	reportd = make(map[string]int)
+	var reportd map[string]bool
+	reportd = make(map[string]bool)
 
-	re31 := regexp.MustCompile(`[a-zA-Z0-9’]`)
-	var levreported map[string]int
-	levreported = make(map[string]int)
-	// for each suspect word, check against all words.
-
-	if p.Debug {
-		fmt.Printf("suspects, okwords: %d, %d\n", len(suspects), len(wordListMapCount))
-	}
+	var levreported map[string]bool
+	levreported = make(map[string]bool)
 
 	// created sorted list of words for report determinism
 	sortedWords := make([]string, 0, len(wordListMapCount))
@@ -3307,6 +3281,13 @@ func levencheck(suspects []string) []string {
 	}
 	sort.Strings(sortedWords)
 
+	if p.Debug {
+		fmt.Printf("suspects, okwords: %d, %d\n", len(suspects), len(sortedWords))
+	}
+
+	re31 := regexp.MustCompile(`[a-zA-Z0-9’]`)
+
+	// for each suspect word, check against all words.
 	// suspects are already sorted, courtesy of aspellCheck()
 	for _, suspect := range suspects {
 		suspectlc := strings.ToLower(suspect)
@@ -3315,24 +3296,22 @@ func levencheck(suspects []string) []string {
 		suspectlc = strings.Replace(suspectlc, "æ", "a𝚎", -1)
 		suspectlc = strings.Replace(suspectlc, "œ", "o𝚎", -1)
 
+		// must be five letters or more or contain unexpected character
+		s31 := re31.ReplaceAllString(suspectlc, "")
+		if utf8.RuneCountInString(suspectlc) < 5 && len(s31) == 0 {
+			continue
+		}
+
 		for _, testword := range sortedWords {
 			testwordlc := strings.ToLower(testword)
 
 			// have both been already reported
-			r1st, r2nd := false, false
-			if _, ok := reportd[testwordlc]; ok {
-				r1st = true
-			}
-			if _, ok := reportd[suspectlc]; ok {
-				r2nd = true
-			}
-			if r1st && r2nd {
+			if reportd[suspectlc] && reportd[testwordlc] {
 				continue
 			}
 
-			// must be five letters or more or contain unexpected character
-			s31 := re31.ReplaceAllString(suspectlc, "")
-			if utf8.RuneCountInString(suspectlc) < 5 && len(s31) == 0 {
+			// skip if pair is already reported
+			if levreported[suspect+":"+testword] {
 				continue
 			}
 
@@ -3341,14 +3320,14 @@ func levencheck(suspects []string) []string {
 				continue
 			}
 
-			// if both are entirely numerals or Roman Numerals, skip
-			if len(strings.Trim(suspectlc, "0123456789ivxlc")) == 0 &&
-				len(strings.Trim(testwordlc, "0123456789ivxlc")) == 0 {
+			// differ only by apparent plural
+			if suspectlc == testwordlc+"s" || suspectlc+"s" == testwordlc {
 				continue
 			}
 
-			// differ only by apparent plural
-			if suspectlc == testwordlc+"s" || suspectlc+"s" == testwordlc {
+			// if both are entirely numerals or Roman Numerals, skip
+			if len(strings.Trim(suspectlc, "0123456789ivxlc")) == 0 &&
+				len(strings.Trim(testwordlc, "0123456789ivxlc")) == 0 {
 				continue
 			}
 
@@ -3372,24 +3351,19 @@ func levencheck(suspects []string) []string {
 				suspectlc := strings.Replace(suspectlc, "o𝚎", "œ", -1)
 				suspectlc = strings.Replace(suspectlc, "a𝚎", "æ", -1)
 
-				// report if not already reported
-				if _, ok := levreported[suspect+":"+testword]; !ok {
-					rs = append(rs, fmt.Sprintf("%s(%d):%s(%d)", suspectlc, countsuspect,
-						testwordlc, counttestword))
-					nreports++
+				rs = append(rs, fmt.Sprintf("%s(%d):%s(%d)", suspectlc, countsuspect,
+					testwordlc, counttestword))
+				rs = append(rs, showWordInContext(testword)...)
+				rs = append(rs, "          ----")
+				rs = append(rs, showWordInContext(suspect)...)
+				rs = append(rs, "")
 
-					rs = append(rs, showWordInContext(testword)...)
-					rs = append(rs, "          ----")
-					rs = append(rs, showWordInContext(suspect)...)
-
-					// remember this pair and do not report again
-					// check above will be for these words in reverse
-					levreported[testword+":"+suspect] = 1
-					rs = append(rs, "")
-				}
-
-				reportd[testwordlc] = 1
-				reportd[suspectlc] = 1
+				// remember this pair and do not report again
+				// check above will be for these words in reverse
+				levreported[testword+":"+suspect] = true
+				reportd[testwordlc] = true
+				reportd[suspectlc] = true
+				nreports++
 			}
 
 		}
