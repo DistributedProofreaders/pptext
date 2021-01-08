@@ -673,14 +673,6 @@ func puncScan() []string {
 			// at the EOF one past the last line.
 			// process what we have and reset
 
-			// if stack has an ODQ, look ahead and see if it may be a continued quote
-			r2 := Peek()
-			if r2.punc == "“" {
-				if i < len(lwbuf)-1 && strings.HasPrefix(strings.TrimSpace(lwbuf[i+1]), "“") {
-					_ = Pop() // continued quote
-				}
-			}
-
 			// anything on stack at this point is an error
 			if len(pstack) > 0 {
 				stacklst := ""
