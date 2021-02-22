@@ -3748,7 +3748,10 @@ func readWordList(infile string) ([]string, int) {
 	defer file.Close() // here if it opened
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		wd = append(wd, scanner.Text())
+		// skip blank lines
+		if scanner.Text() != "" {
+			wd = append(wd, scanner.Text())
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
