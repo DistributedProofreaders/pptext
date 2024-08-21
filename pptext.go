@@ -3787,10 +3787,10 @@ func readWordList(infile string) ([]string, int) {
 // aspell flags as misspelled. dict is an optional dictionary to use
 func runAspell(words []string, dict string) []string {
 
-	cmd := exec.Command("aspell", "--encoding", "utf-8", "--list")
+	cmd := exec.Command("/usr/bin/aspell", "--encoding", "utf-8", "--list")
 
 	if dict != "" {
-		cmd = exec.Command("aspell", "--encoding", "utf-8", "--lang", dict, "--list")
+		cmd = exec.Command("/usr/bin/aspell", "--encoding", "utf-8", "--lang", dict, "--list")
 	}
 
 	// open a pipe to aspell's stdin for our words
@@ -3870,7 +3870,7 @@ func main() {
 
 	pptr = append(pptr, fmt.Sprintf("☲processing file: %s", path.Base(p.Infile)))
 
-	out, err := exec.Command("file", p.Infile).Output()
+	out, err := exec.Command("/usr/bin/file", p.Infile).Output()
 	if err != nil {
 		log.Fatal(err)
 	}
