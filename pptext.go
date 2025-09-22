@@ -2029,7 +2029,8 @@ func tcLetterChecks(wb []string) []string {
 
 // spacing check
 // any spacing is okay until the first 4-space gap. Then
-// expecting 4-1-2 or 4-2 variations only
+// expecting 4-1-2 or 4-2 variations only.
+// also captures headers (chapter/h2) in a list to output.
 func tcSpacingCheck(wb []string) []string {
 	rs := []string{}
 	s := ""
@@ -2044,9 +2045,38 @@ func tcSpacingCheck(wb []string) []string {
 
 	consec := 0 // consecutive blank lines
 	lastn := 0  // line number of last paragraph start
+
+	headerList := []string{} // store seen headers for later
+	capturingHeader := false // are we currently capturing a header?
+	headerBuf := []string{}
+
+	// helper: normalize block into one line
+	normalizeBlock := func(lines []string) string {
+		parts := []string{}
+		for _, l := range lines {
+			t := strings.TrimSpace(l)
+			if t != "" {
+				parts = append(parts, t)
+			}
+		}
+		if len(parts) == 0 {
+			return ""
+		}
+		return " " + strings.Join(parts, " ")
+	}
+
 	for n, line := range wb {
 		if len(strings.TrimSpace(line)) == 0 { // all whitespace
 			consec++
+
+			// 4 blank lines were just seen; capture the header text
+			if capturingHeader {
+				if len(headerBuf) > 0 {
+					headerList = append(headerList, normalizeBlock(headerBuf))
+					headerBuf = []string{}
+				}
+				capturingHeader = false
+			}
 			continue
 		}
 		// a non-blank line
@@ -2063,10 +2093,18 @@ func tcSpacingCheck(wb []string) []string {
 			rs = append(rs, s)
 			s = fmt.Sprintf("%d", consec)
 			lastn = n
+
+			// after 4 blanks we are starting a header; capture it
+			capturingHeader = true
+			headerBuf = []string{line}
 		} else {
 			// we have fewer than four but at least one to report
 			if consec > 0 {
 				s = fmt.Sprintf("%s%d", s, consec)
+			}
+
+			if capturingHeader {
+				headerBuf = append(headerBuf, line)
 			}
 		}
 		consec = 0 // a non-blank line seen; start count over
@@ -2075,7 +2113,17 @@ func tcSpacingCheck(wb []string) []string {
 	s = fmt.Sprintf("%6d %s", lastn, s)
 	rs = append(rs, s) // last line in buffer
 
+	// flush last captured header if still active
+	if capturingHeader && len(headerBuf) > 0 {
+		headerList = append(headerList, normalizeBlock(headerBuf))
+	}
+
 	// always dim
+	rs = append(rs, "")
+	rs = append(rs, "----- main text headers -------------------------------------------------------")
+	for _, b := range headerList {
+		rs = append(rs, b)
+	}
 	rs = append(rs, "")
 	// rs[0] = "☲" + rs[0]  // style dim
 	// rs[len(rs)-1] += "☷" // close style
