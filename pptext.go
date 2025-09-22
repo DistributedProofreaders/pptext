@@ -2122,6 +2122,12 @@ func tcSpacingCheck(wb []string) []string {
 	rs = append(rs, "")
 	rs = append(rs, "----- main text headers -------------------------------------------------------")
 	for _, b := range headerList {
+		// Convert string to rune slice (to handle UTF-8 safely)
+		runes := []rune(b)
+		if len(runes) > 80 {
+			runes = append(runes[:75], []rune("[...]")...)
+		}
+		b = string(runes)
 		rs = append(rs, b)
 	}
 	rs = append(rs, "")
