@@ -1753,6 +1753,138 @@ func tcRepeatedWords(pb []string) []string {
 	return rs
 }
 
+// duplicate lines check
+//   - look for blocks of 2 or more consecutive lines that repeat
+//     elsewhere in the file. a single repeated line is ignored.
+//   - ignores blank line and thought breaks
+func tcDuplicateLines(wb []string) []string {
+	rs := []string{}
+	rs = append(rs, "----- duplicate lines check ---------------------------------------------------")
+	rs = append(rs, "")
+
+	const thought_break = "       *       *       *       *       *"
+
+	// count how often each line appears in the file
+	lineCounts := make(map[string]int)
+	for _, line := range wb {
+		lineCounts[line]++
+	}
+
+	// make a list of line numbers for lines occurring more than once (excluding
+	// blank lines and thought breaks). only the first occurrence is stored.
+	anchors := []int{}
+	for text, cnt := range lineCounts {
+		if cnt <= 1 {
+			continue
+		}
+		if len(text) == 0 {
+			continue
+		}
+		if text == thought_break {
+			continue
+		}
+
+		// first occurrence index of this line in wb
+		first := -1
+		for i, line := range wb {
+			if line == text {
+				first = i + 1 // convert to 1-based
+				break
+			}
+		}
+		if first != -1 {
+			anchors = append(anchors, first)
+		}
+	}
+
+	// sort the anchor line numbers
+	sort.Ints(anchors)
+
+	// collapse into ranges of consecutive line numbers. we only report
+	// *blocks* of repeating lines; not single repeating lines.
+	type lineRange struct {
+		start int
+		end   int
+	}
+	var ranges []lineRange
+
+	start := anchors[0]
+	prev := anchors[0]
+	for i := 1; i < len(anchors); i++ {
+		curr := anchors[i]
+		if curr == prev+1 {
+			// still in the same consecutive block
+			prev = curr
+			continue
+		}
+		// close previous block
+		ranges = append(ranges, lineRange{start: start, end: prev})
+		// start a new block
+		start = curr
+		prev = curr
+	}
+	// close last block
+	ranges = append(ranges, lineRange{start: start, end: prev})
+
+	// filter to only ranges where 2+ lines have repeated. we don't want
+	// *every* repeated line as they're too common.
+	threshold := 1
+	filtered := []lineRange{}
+	for _, r := range ranges {
+		if r.end >= r.start+threshold {
+			filtered = append(filtered, r)
+		}
+	}
+
+	// if there's nothing to report, output a grey section, then finish.
+	if len(filtered) == 0 {
+		rs = append(rs, "  no clusters of duplicated lines found.")
+		rs[0] = "☲" + rs[0] // style dim
+		rs = append(rs, "")
+		rs[len(rs)-1] += "☷"
+		return rs
+	}
+
+	// if there is something to report, show each range.
+	count := 0
+	for _, r := range filtered {
+		count++
+		lineCount := r.end - r.start + 1
+
+		// if lineCount >= 2 {
+		rs = append(rs,
+			fmt.Sprintf("  lines %d–%d are part of a duplicated-line cluster:", r.start, r.end))
+		// }
+
+		// show the actual lines; trim in non-verbose mode
+		limit := lineCount
+		truncated := false
+		if !p.Verbose && limit > 4 {
+			limit = 4
+			truncated = true
+		}
+
+		for ln := r.start; ln < r.start+limit; ln++ {
+			// ln is 1-based; wb index is 0-based
+			if ln-1 >= 0 && ln-1 < len(wb) {
+				rs = append(rs,
+					fmt.Sprintf("   %5d: %s", ln, pt(wb[ln-1])))
+			}
+		}
+		if truncated {
+			rs = append(rs,
+				fmt.Sprintf("      ... (%d more lines in this cluster)", lineCount-limit))
+		}
+		rs = append(rs, "")
+	}
+
+	// decorate header and close style
+	rs[0] = "☳" + rs[0] // style black
+	rs[len(rs)-1] += "☷"
+	tcec += len(filtered)
+	return rs
+}
+
 // definitions from Project Gutenberg
 const (
 	SHORTEST_PG_LINE = 55
@@ -3098,6 +3230,7 @@ func textCheck() []string {
 	rs = append(rs, tcShortLines(wbuf)...)
 	rs = append(rs, tcLongLines(wbuf)...)
 	rs = append(rs, tcRepeatedWords(pbuf)...)
+	rs = append(rs, tcDuplicateLines(wbuf)...)
 	rs = append(rs, tcEllipsisCheck(wbuf)...)
 	rs = append(rs, tcDashCheck(wbuf, pbuf)...)
 	rs = append(rs, scannoCheck(wbuf)...)
