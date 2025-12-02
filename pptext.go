@@ -1764,6 +1764,15 @@ func tcDuplicateLines(wb []string) []string {
 
 	const thought_break = "       *       *       *       *       *"
 
+	// we only report *blocks* of repeating lines; not single repeating lines.
+	// create a structured list to store the ranges.
+	type lineRange struct {
+		start int
+		end   int
+	}
+	var ranges []lineRange
+	filtered := []lineRange{}
+
 	// count how often each line appears in the file
 	lineCounts := make(map[string]int)
 	for _, line := range wb {
@@ -1797,47 +1806,41 @@ func tcDuplicateLines(wb []string) []string {
 		}
 	}
 
-	// sort the anchor line numbers
-	sort.Ints(anchors)
+	if len(anchors) > 0 {
 
-	// collapse into ranges of consecutive line numbers. we only report
-	// *blocks* of repeating lines; not single repeating lines.
-	type lineRange struct {
-		start int
-		end   int
-	}
-	var ranges []lineRange
+		// sort the anchor line numbers
+		sort.Ints(anchors)
 
-	start := anchors[0]
-	prev := anchors[0]
-	for i := 1; i < len(anchors); i++ {
-		curr := anchors[i]
-		if curr == prev+1 {
-			// still in the same consecutive block
+		start := anchors[0]
+		prev := anchors[0]
+		for i := 1; i < len(anchors); i++ {
+			curr := anchors[i]
+			if curr == prev+1 {
+				// still in the same consecutive block
+				prev = curr
+				continue
+			}
+			// close previous block
+			ranges = append(ranges, lineRange{start: start, end: prev})
+			// start a new block
+			start = curr
 			prev = curr
-			continue
 		}
-		// close previous block
+		// close last block
 		ranges = append(ranges, lineRange{start: start, end: prev})
-		// start a new block
-		start = curr
-		prev = curr
-	}
-	// close last block
-	ranges = append(ranges, lineRange{start: start, end: prev})
 
-	// filter to only ranges where 2+ lines have repeated. we don't want
-	// *every* repeated line as they're too common.
-	threshold := 1
-	filtered := []lineRange{}
-	for _, r := range ranges {
-		if r.end >= r.start+threshold {
-			filtered = append(filtered, r)
+		// filter to only ranges where 2+ lines have repeated. we don't want
+		// *every* repeated line as they're too common.
+		threshold := 1
+		for _, r := range ranges {
+			if r.end >= r.start+threshold {
+				filtered = append(filtered, r)
+			}
 		}
 	}
 
 	// if there's nothing to report, output a grey section, then finish.
-	if len(filtered) == 0 {
+	if len(anchors) == 0 || len(filtered) == 0 {
 		rs = append(rs, "  no clusters of duplicated lines found.")
 		rs[0] = "☲" + rs[0] // style dim
 		rs = append(rs, "")
