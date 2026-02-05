@@ -311,8 +311,204 @@ var HFOOT = []string{
 	"</body>",
 	"</html>"}
 
-// saves HTML report to report.html
+// data type to store a range of footnote numbers
+type footnoteRange struct {
+	start int
+	end   int
+	count int
+}
+
+// valid modes for scanForFootnotes()
+type FootnoteScanMode int
+
+const (
+	FootnoteScanModeFootnotes FootnoteScanMode = iota
+	FootnoteScanModeAnchors
+)
+
+// Scan the text for footnotes and their anchors, of the form "[n]",
+// "Footnote n:", or "[Footnote n:", where n is a positive integer.
+// There are 2 modes:
 //
+// - FootnoteScanModeAnchors looks for "[n]" that are NOT at the start of a new
+//   line (ignoring whitespace). These are footnote anchors, which point to
+//   footnotes.
+//
+// - FootnoteScanModeFootnotes looks for "[n]", "Footnote n:", or "[Footnote n:"
+//   which ARE at the start of a new line (ignoring whitespace). These are the
+//   footnotes themselves.
+//
+// Returns a slice of ranges (start,end) representing numbering "series" in the
+// order they appear.
+//
+// A "series" is an unbroken sequence of numbers with no gaps. Whenever we see
+// a value that is not exactly 1 higher than the previous value, the current
+// sequence ends and a new sequence is started.
+
+func scanForFootnotes(lines []string, mode FootnoteScanMode) []footnoteRange {
+	if mode != FootnoteScanModeFootnotes && mode != FootnoteScanModeAnchors {
+		// invalid mode
+		return nil
+	}
+
+	var re *regexp.Regexp
+	switch mode {
+	case FootnoteScanModeAnchors:
+		// Match "[1]". Elsewhere, the code makes sure it wasn't the first text
+		// on a new line.
+		re = regexp.MustCompile(`\[(\d+)\]`)
+	case FootnoteScanModeFootnotes:
+		// Match "[1]", "Footnote 1:", "[Footnote 1:" as long as it's the first
+		// text on a new line (with optional leading whitespace).
+		re = regexp.MustCompile(`^\s*(?:\[|\[?Footnote\s+)(\d+)(?:\]|:)`)
+	}
+
+	var ranges []footnoteRange
+
+	curSeen := make(map[int]bool)
+	curStart, curEnd, curCount := 0, 0, 0
+	prevNum := 0
+
+	flush := func() {
+		if curCount == 0 {
+			return
+		}
+		ranges = append(ranges, footnoteRange{start: curStart, end: curEnd, count: curCount})
+		curSeen = make(map[int]bool)
+		curStart, curEnd, curCount = 0, 0, 0
+	}
+
+	for _, line := range lines {
+		matches := re.FindAllStringSubmatchIndex(line, -1)
+		if matches == nil {
+			continue
+		}
+
+		// index of first non-space rune; -1 means empty/whitespace line
+		firstNonSpace := -1
+		if mode == FootnoteScanModeAnchors {
+			for i, r := range line {
+				if !unicode.IsSpace(r) {
+					firstNonSpace = i
+					break
+				}
+			}
+		}
+
+		for _, mi := range matches {
+			// mi: [fullStart fullEnd sub1Start sub1End]
+			if len(mi) < 4 {
+				continue
+			}
+
+			fullStart := mi[0]
+			numStr := line[mi[2]:mi[3]]
+
+			// Ignore anchors that start the line (footnote definition labels).
+			if mode == FootnoteScanModeAnchors && firstNonSpace != -1 && fullStart == firstNonSpace {
+				continue
+			}
+
+			n, err := strconv.Atoi(numStr)
+			if err != nil || n <= 0 {
+				continue
+			}
+
+			// Start a new series when numbering restarts at lower than, or the
+			// same as, the previous value. Also start a new series if the
+			// current value is larger than previous value, but by more than 1
+			// (indicating a sequence gap).
+			if n <= prevNum || n > prevNum+1 {
+				flush()
+				prevNum = 0
+			}
+
+			if curCount == 0 {
+				curStart = n
+				curEnd = n
+			}
+			if !curSeen[n] {
+				curSeen[n] = true
+				curCount++
+				if n < curStart {
+					curStart = n
+				}
+				if n > curEnd {
+					curEnd = n
+				}
+			}
+
+			prevNum = n
+		}
+	}
+
+	flush()
+	return ranges
+}
+
+// Process a single footnote range produced by scanForFootnotes()
+func processFootnoteRange(label string, ranges []footnoteRange, rs []string) []string {
+
+	parts := []string{}
+	total := 0
+
+	if len(ranges) == 1 {
+		r := ranges[0]
+		if r.start == r.end {
+			rs = append(rs, fmt.Sprintf("found %s: %d (count: %d)", label, r.start, r.count))
+		} else {
+			rs = append(rs, fmt.Sprintf("found %ss: %d–%d (count: %d)", label, r.start, r.end, r.count))
+		}
+		rs = append(rs, "")
+		rs[len(rs)-1] += "☷" // close style
+	} else {
+		for _, r := range ranges {
+			total += r.count
+			if r.start == r.end {
+				parts = append(parts, fmt.Sprintf("%d", r.start))
+			} else {
+				parts = append(parts, fmt.Sprintf("%d–%d", r.start, r.end))
+			}
+		}
+		rs = append(rs, fmt.Sprintf("found %ss:", label))
+		for _, p := range parts {
+			rs = append(rs, fmt.Sprintf("    %s", p))
+		}
+		rs = append(rs, fmt.Sprintf("(total count: %d)", total))
+		rs = append(rs, "")
+	}
+
+	return rs
+}
+
+// Run footnote check and return output for reporting
+
+func footnoteCheck(wb []string) []string {
+	rs := []string{}
+	rs = append(rs, "----- footnote check ---------------------------------------------------------")
+	rs = append(rs, "")
+
+	ranges := scanForFootnotes(wb, FootnoteScanModeFootnotes)
+	anchorRanges := scanForFootnotes(wb, FootnoteScanModeAnchors)
+
+	if len(anchorRanges) == 0 && len(ranges) == 0 {
+		rs = append(rs, "no footnotes or anchors found.")
+		rs[0] = "☲" + rs[0] // style dim
+		rs = append(rs, "")
+		rs[len(rs)-1] += "☷" // close style
+		return rs
+	} else {
+		rs[0] = "☳" + rs[0] // style black
+	}
+
+	rs = processFootnoteRange("footnote anchor", anchorRanges, rs)
+	rs = processFootnoteRange("footnote", ranges, rs)
+
+	rs[len(rs)-1] += "☷" // close style
+	return rs
+}
+
+// saves HTML report to report.html
 func saveHtml(a []string, outdir string) {
 	f2, err := os.Create(outdir + "/report.html") // specified report file for text output
 	if err != nil {
@@ -3236,6 +3432,7 @@ func textCheck() []string {
 	rs = append(rs, tcDuplicateLines(wbuf)...)
 	rs = append(rs, tcEllipsisCheck(wbuf)...)
 	rs = append(rs, tcDashCheck(wbuf, pbuf)...)
+	rs = append(rs, footnoteCheck(wbuf)...)
 	rs = append(rs, scannoCheck(wbuf)...)
 	rs = append(rs, tcCurlyQuoteCheck(wbuf)...)
 	rs = append(rs, tcGutChecks(wbuf)...)
