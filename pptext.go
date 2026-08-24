@@ -73,6 +73,8 @@ var (
 
 const SHOWTIMING bool = false
 
+const defaultAspellPath string = "/usr/bin/aspell"
+
 var sw []string      // suspect words list
 var rs []string      // array of strings for local aggregation
 var pptr []string    // pptext report
@@ -233,6 +235,7 @@ type params struct {
 	Outdir        string // target directory
 	Wlang         string
 	Alang         string
+	AspellPath    string
 	GWFilename    string
 	Experimental  bool
 	Verbose       bool
@@ -4174,10 +4177,10 @@ func readWordList(infile string) ([]string, int) {
 // aspell flags as misspelled. dict is an optional dictionary to use
 func runAspell(words []string, dict string) []string {
 
-	cmd := exec.Command("/usr/bin/aspell", "--encoding", "utf-8", "--list")
+	cmd := exec.Command(p.AspellPath, "--encoding", "utf-8", "--list")
 
 	if dict != "" {
-		cmd = exec.Command("/usr/bin/aspell", "--encoding", "utf-8", "--lang", dict, "--list")
+		cmd = exec.Command(p.AspellPath, "--encoding", "utf-8", "--lang", dict, "--list")
 	}
 
 	// open a pipe to aspell's stdin for our words
@@ -4219,6 +4222,7 @@ func doparams() params {
 	flag.StringVar(&p.Infile, "i", "", "input file")
 	flag.StringVar(&p.Outdir, "o", ".", "output report directory")
 	flag.StringVar(&p.Alang, "a", "en", "aspell wordlist language")
+	flag.StringVar(&p.AspellPath, "A", defaultAspellPath, "path to aspell executable")
 	flag.StringVar(&p.GWFilename, "g", "", "good words file")
 	flag.StringVar(&p.SelectedTests, "t", "a", "tests to run")
 	flag.BoolVar(&p.Experimental, "x", false, "experimental (developer use)")
