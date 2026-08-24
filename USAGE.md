@@ -11,6 +11,8 @@ Defaults:
 
 To see all options run `pptext --help`:
 
+    -A string
+        path to aspell executable (default "/usr/bin/aspell")
     -a string
         aspell wordlist language (default "en")
     -d  Debug flag
