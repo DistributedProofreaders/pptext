@@ -1879,7 +1879,11 @@ func tcEllipsisCheck(wb []string) []string {
 	re4 := regexp.MustCompile(`[\s\p{L}]\.\.\.\.\.+[\s\p{L}]`)
 
 	// ... us some pudding (start of line)
+	// a line beginning with exactly three dots followed by a space is a
+	// normal continuation ellipsis and is not flagged; other dot counts
+	// (or three dots with no following space) at line start are suspect
 	re5 := regexp.MustCompile(`^\.`)
+	re5ok := regexp.MustCompile(`^\.\.\. `)
 
 	// give ... (end of line)
 	re6 := regexp.MustCompile(`[^\.]\.\.\.$`)
@@ -1891,9 +1895,10 @@ func tcEllipsisCheck(wb []string) []string {
 
 	count := 0
 	for n, line := range wb {
+		startSuspect := re5.MatchString(line) && !re5ok.MatchString(line)
 		if re1.MatchString(line) || re2.MatchString(line) ||
 			re3.MatchString(line) || re4.MatchString(line) ||
-			re5.MatchString(line) || re6.MatchString(line) ||
+			startSuspect || re6.MatchString(line) ||
 			re7.MatchString(line) || re8.MatchString(line) {
 			rs = append(rs, fmt.Sprintf("  %5d: %s", n+1, line)) // 1=based
 			count++
