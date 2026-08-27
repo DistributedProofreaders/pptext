@@ -124,12 +124,9 @@ var dbuf []string
 // word is entirely numeric or entirely consistent case Roman numerals
 
 var re2a *regexp.Regexp = regexp.MustCompile(`[0123456789]+`)
-var re2b *regexp.Regexp = regexp.MustCompile(`[ivxlc]+`)
-var re2c *regexp.Regexp = regexp.MustCompile(`[IVXLC]+`)
+var re2b *regexp.Regexp = regexp.MustCompile(`[ivxlcdm]+`)
+var re2c *regexp.Regexp = regexp.MustCompile(`[IVXLCDM]+`)
 
-//re2a := regexp.MustCompile(`[0123456789]+`)
-//re2b := regexp.MustCompile(`[ivxlc]+`)
-//re2c := regexp.MustCompile(`[IVXLC]+`)
 func isRomOrNum(s string) bool {
 	t1 := re2a.ReplaceAllString(s, "")
 	t2 := re2b.ReplaceAllString(s, "")
