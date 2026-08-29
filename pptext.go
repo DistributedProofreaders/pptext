@@ -4253,7 +4253,7 @@ func doparams() params {
 	flag.StringVar(&p.AspellPath, "A", defaultAspellPath, "path to aspell executable")
 	flag.StringVar(&p.GWFilename, "g", "", "good words file")
 	flag.StringVar(&p.SelectedTests, "t", "a", "tests to run")
-	flag.BoolVar(&p.SkipAspell, "s", false, "skip spellcheck and edit-distance checks (disable aspell)")
+	flag.BoolVar(&p.SkipAspell, "s", false, "disable aspell (skips spellcheck and edit-distance)")
 	flag.BoolVar(&p.Experimental, "x", false, "experimental (developer use)")
 	flag.BoolVar(&p.Verbose, "v", false, "Verbose operation")
 	flag.BoolVar(&p.Revision, "r", false, "return Revision number")
