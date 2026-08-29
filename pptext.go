@@ -644,6 +644,23 @@ func Peek() xpuncEvent {
 	return t
 }
 
+// alangIncludesEnglish reports whether the -a aspell language spec
+// requests an English dictionary. The spec may name a single language
+// ("en", "en_GB"), a comma-separated list of languages ("en,fr"), or a
+// combination ("en_US,fr") -- any entry equal to "en" or of the form
+// "en_XX"/"en-XX" counts as English.
+func alangIncludesEnglish(alang string) bool {
+	for _, lang := range strings.Split(alang, ",") {
+		lang = strings.TrimSpace(lang)
+		if strings.EqualFold(lang, "en") ||
+			strings.HasPrefix(strings.ToLower(lang), "en_") ||
+			strings.HasPrefix(strings.ToLower(lang), "en-") {
+			return true
+		}
+	}
+	return false
+}
+
 // aspell qualify words in map
 // return map of only those recognized by aspell
 func asqual(m map[string]int) map[string]int {
@@ -777,7 +794,7 @@ func puncScan() []string {
 
 	// the following three aspell-qualified apostrophe checks only make sense
 	// when spellcheck is enabled (not -s) and the dictionary language is English
-	if !p.SkipAspell && p.Alang == "en" {
+	if !p.SkipAspell && alangIncludesEnglish(p.Alang) {
 
 		// thinkin’ ?= thinking processing
 		// if a word ends in in’ change it to -ing and see if that's a valid word
