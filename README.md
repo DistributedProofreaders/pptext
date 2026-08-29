@@ -5,9 +5,9 @@ See [USAGE.md](USAGE.md) for how to use `pptext`.
 
 ## Building
 
-To build the `pptext`  binary:
+To build the `pptext` binary, run `make`. Mac users may want to install Homebrew's coreutils package in order to make use of GNU's date command (which installs as `gdate`). The Makefile assumes GNU date's command line arguments are available.
 
-    go build pptext.go
+If GNU Make is not installed, it can also be built with `go build pptext.go`.
 
 ## Dependencies
 
