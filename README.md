@@ -13,3 +13,5 @@ To build the `pptext`  binary:
 
 aspell needs to be installed, as well as aspell dictionaries for desired
 languages.
+
+If aspell is not installed, aspell checks may be skipped entirely with `-s`.
