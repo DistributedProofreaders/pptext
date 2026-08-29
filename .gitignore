@@ -1,1 +1,7 @@
-pptext
+# binary artifact
+/pptext
+
+# runtime output artifacts
+/scanreport.txt
+/report.html
+/runlog.txt
