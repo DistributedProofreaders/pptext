@@ -238,6 +238,7 @@ type params struct {
 	Verbose       bool
 	Revision      bool
 	Debug         bool
+	SkipAspell    bool
 	SelectedTests string // a=all, b-z0-9=selected tests
 }
 
@@ -640,6 +641,23 @@ func Peek() xpuncEvent {
 	return t
 }
 
+// alangIncludesEnglish reports whether the -a aspell language spec
+// requests an English dictionary. The spec may name a single language
+// ("en", "en_GB"), a comma-separated list of languages ("en,fr"), or a
+// combination ("en_US,fr") -- any entry equal to "en" or of the form
+// "en_XX"/"en-XX" counts as English.
+func alangIncludesEnglish(alang string) bool {
+	for _, lang := range strings.Split(alang, ",") {
+		lang = strings.TrimSpace(lang)
+		if strings.EqualFold(lang, "en") ||
+			strings.HasPrefix(strings.ToLower(lang), "en_") ||
+			strings.HasPrefix(strings.ToLower(lang), "en-") {
+			return true
+		}
+	}
+	return false
+}
+
 // aspell qualify words in map
 // return map of only those recognized by aspell
 func asqual(m map[string]int) map[string]int {
@@ -771,78 +789,83 @@ func puncScan() []string {
 
 	// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-	// thinkin’ ?= thinking processing
-	// if a word ends in in’ change it to -ing and see if that's a valid word
-	// if it is, protect it
-	re51 := regexp.MustCompile(`(?P<a1>^|\P{L})(?P<a2>\p{L}+?in)’(?P<a3>\P{L}|$)`) // ending in "in’"
-	cwords := make(map[string]int)
-	for i, _ := range lwbuf {
-		t := re51.FindAllStringSubmatch(lwbuf[i], -1)
-		for _, u := range t {
-			cwords[u[2]+"g"] = 1
-		}
-	}
-	// reduce map of candidate words to only those ok by aspell
-	cwords = asqual(cwords)
-	// cloak the ok ones with ▵ replacing "’"
-	for k, _ := range cwords {
-		tword := k[:len(k)-1] + "’"
-		pword := k[:len(k)-1] + "▵"
+	// the following three aspell-qualified apostrophe checks only make sense
+	// when spellcheck is enabled (not -s) and the dictionary language is English
+	if !p.SkipAspell && alangIncludesEnglish(p.Alang) {
+
+		// thinkin’ ?= thinking processing
+		// if a word ends in in’ change it to -ing and see if that's a valid word
+		// if it is, protect it
+		re51 := regexp.MustCompile(`(?P<a1>^|\P{L})(?P<a2>\p{L}+?in)’(?P<a3>\P{L}|$)`) // ending in "in’"
+		cwords := make(map[string]int)
 		for i, _ := range lwbuf {
-			lwbuf[i] = strings.Replace(lwbuf[i], tword, pword, -1)
+			t := re51.FindAllStringSubmatch(lwbuf[i], -1)
+			for _, u := range t {
+				cwords[u[2]+"g"] = 1
+			}
 		}
-	}
-
-	// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-	// ’ouse ?= house processing
-	// if a word startsd with ’, change ’ to "h" and see if that's a valid word
-	// if it is, protect it
-	re52 := regexp.MustCompile(`(?P<a1>^|\P{L})’(?P<a2>\p{L}+)(?P<a3>\P{L}|$)`) // start with "’"
-	cwords = make(map[string]int)
-	for i, _ := range lwbuf {
-		t := re52.FindAllStringSubmatch(lwbuf[i], -1)
-		for _, u := range t {
-			cwords["h"+u[2]] = 1
+		// reduce map of candidate words to only those ok by aspell
+		cwords = asqual(cwords)
+		// cloak the ok ones with ▵ replacing "’"
+		for k, _ := range cwords {
+			tword := k[:len(k)-1] + "’"
+			pword := k[:len(k)-1] + "▵"
+			for i, _ := range lwbuf {
+				lwbuf[i] = strings.Replace(lwbuf[i], tword, pword, -1)
+			}
 		}
-	}
-	// reduce map of candidate words to only those ok by aspell
-	cwords = asqual(cwords)
-	// cloak the ok ones with ▵ replacing "’"
-	for k, _ := range cwords {
-		tword := "’" + k[1:]
-		pword := "▵" + k[1:]
+
+		// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+		// ’ouse ?= house processing
+		// if a word startsd with ’, change ’ to "h" and see if that's a valid word
+		// if it is, protect it
+		re52 := regexp.MustCompile(`(?P<a1>^|\P{L})’(?P<a2>\p{L}+)(?P<a3>\P{L}|$)`) // start with "’"
+		cwords = make(map[string]int)
 		for i, _ := range lwbuf {
-			lwbuf[i] = strings.Replace(lwbuf[i], tword, pword, -1)
+			t := re52.FindAllStringSubmatch(lwbuf[i], -1)
+			for _, u := range t {
+				cwords["h"+u[2]] = 1
+			}
 		}
-	}
-
-	// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-	/*
-	   perhaps should be  disabled: fails too readily by not being able to distinguish:
-	       The dogs’ barking could be heard for miles. (as an apostrophe)
-	       The place has ‘gone to the dogs’ very quickly. (as a close single quote)
-	*/
-
-	// minutes’ ?= minutes processing
-	// minutes’ -> minute | valid ? protect it : leave it
-	re53 := regexp.MustCompile(`(?P<a1>^|\P{L})(?P<a2>\p{L}+)s’(?P<a3>\P{L}|$)`) // end in "s’"
-	cwords = make(map[string]int)
-	for i, _ := range lwbuf {
-		t := re53.FindAllStringSubmatch(lwbuf[i], -1)
-		for _, u := range t {
-			cwords[u[2]] = 1
+		// reduce map of candidate words to only those ok by aspell
+		cwords = asqual(cwords)
+		// cloak the ok ones with ▵ replacing "’"
+		for k, _ := range cwords {
+			tword := "’" + k[1:]
+			pword := "▵" + k[1:]
+			for i, _ := range lwbuf {
+				lwbuf[i] = strings.Replace(lwbuf[i], tword, pword, -1)
+			}
 		}
-	}
-	// reduce map of candidate words to only those ok by aspell
-	cwords = asqual(cwords)
-	// cloak the ok ones with ▵ replacing "’"
-	for k, _ := range cwords {
-		tword := k + "s’"
-		pword := k + "s▵"
+
+		// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+		/*
+		   perhaps should be  disabled: fails too readily by not being able to distinguish:
+		       The dogs’ barking could be heard for miles. (as an apostrophe)
+		       The place has ‘gone to the dogs’ very quickly. (as a close single quote)
+		*/
+
+		// minutes’ ?= minutes processing
+		// minutes’ -> minute | valid ? protect it : leave it
+		re53 := regexp.MustCompile(`(?P<a1>^|\P{L})(?P<a2>\p{L}+)s’(?P<a3>\P{L}|$)`) // end in "s’"
+		cwords = make(map[string]int)
 		for i, _ := range lwbuf {
-			lwbuf[i] = strings.Replace(lwbuf[i], tword, pword, -1)
+			t := re53.FindAllStringSubmatch(lwbuf[i], -1)
+			for _, u := range t {
+				cwords[u[2]] = 1
+			}
+		}
+		// reduce map of candidate words to only those ok by aspell
+		cwords = asqual(cwords)
+		// cloak the ok ones with ▵ replacing "’"
+		for k, _ := range cwords {
+			tword := k + "s’"
+			pword := k + "s▵"
+			for i, _ := range lwbuf {
+				lwbuf[i] = strings.Replace(lwbuf[i], tword, pword, -1)
+			}
 		}
 	}
 
@@ -4227,6 +4250,7 @@ func doparams() params {
 	flag.StringVar(&p.AspellPath, "A", defaultAspellPath, "path to aspell executable")
 	flag.StringVar(&p.GWFilename, "g", "", "good words file")
 	flag.StringVar(&p.SelectedTests, "t", "a", "tests to run")
+	flag.BoolVar(&p.SkipAspell, "s", false, "disable aspell (skips spellcheck and edit-distance)")
 	flag.BoolVar(&p.Experimental, "x", false, "experimental (developer use)")
 	flag.BoolVar(&p.Verbose, "v", false, "Verbose operation")
 	flag.BoolVar(&p.Revision, "r", false, "return Revision number")
@@ -4362,10 +4386,10 @@ func main() {
 	if strings.ContainsAny(p.SelectedTests, "aq") {
 		s = s + "<a href='#sqc'>smartquote scan</a> "
 	}
-	if strings.ContainsAny(p.SelectedTests, "as") {
+	if strings.ContainsAny(p.SelectedTests, "as") && !p.SkipAspell {
 		s = s + " <a href='#spell'>spellcheck</a> "
 	}
-	if strings.ContainsAny(p.SelectedTests, "ae") {
+	if strings.ContainsAny(p.SelectedTests, "ae") && !p.SkipAspell {
 		s = s + " <a href='#leven'>edit distance</a> "
 	}
 	if strings.ContainsAny(p.SelectedTests, "at12") {
@@ -4403,12 +4427,20 @@ func main() {
 
 	// run this test if "a" all or "s" spellcheck or "e" edit distance
 	// "e" uses okwords
+	// -s disables aspell entirely, skipping both spellcheck and edit distance
 	if strings.ContainsAny(p.SelectedTests, "ase") {
-		var t []string
-		sw, okwords, t = aspellCheck()
-		// only report this test if "a" or "s"
-		if strings.ContainsAny(p.SelectedTests, "as") {
-			pptr = append(pptr, t...)
+		if p.SkipAspell {
+			if strings.ContainsAny(p.SelectedTests, "as") {
+				pptr = append(pptr, "")
+				pptr = append(pptr, "☲----- spellcheck skipped (aspell disabled with -s) -----------------------------☷")
+			}
+		} else {
+			var t []string
+			sw, okwords, t = aspellCheck()
+			// only report this test if "a" or "s"
+			if strings.ContainsAny(p.SelectedTests, "as") {
+				pptr = append(pptr, t...)
+			}
 		}
 	}
 
@@ -4419,8 +4451,13 @@ func main() {
 
 	// run this test if "a" all or "e" edit distance
 	if strings.ContainsAny(p.SelectedTests, "ae") {
-		t := levencheck(sw)
-		pptr = append(pptr, t...)
+		if p.SkipAspell {
+			pptr = append(pptr, "")
+			pptr = append(pptr, "☲----- edit distance check skipped (aspell disabled with -s) --------------------☷")
+		} else {
+			t := levencheck(sw)
+			pptr = append(pptr, t...)
+		}
 	}
 
 	/*************************************************************************/

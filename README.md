@@ -13,3 +13,5 @@ If GNU Make is not installed, it can also be built with `go build pptext.go`.
 
 aspell needs to be installed, as well as aspell dictionaries for desired
 languages.
+
+If aspell is not installed, aspell checks may be skipped entirely with `-s`.
