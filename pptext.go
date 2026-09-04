@@ -4395,7 +4395,7 @@ func main() {
 	if strings.ContainsAny(p.SelectedTests, "at12") {
 		s = s + " <a href='#texta'>text checks</a> "
 	}
-	if strings.ContainsAny(p.SelectedTests, "aj") {
+	if strings.ContainsAny(p.SelectedTests, "aj") && alangIncludesEnglish(p.Alang) {
 		s = s + " <a href='#jeebi'>jeebies</a> "
 	}
 
@@ -4477,8 +4477,13 @@ func main() {
 
 	// run this test if "a" all or "j" jeebies checks
 	if strings.ContainsAny(p.SelectedTests, "aj") {
-		t := jeebies()
-		pptr = append(pptr, t...)
+		if ! alangIncludesEnglish(p.Alang) {
+			pptr = append(pptr, "")
+			pptr = append(pptr, "☲----- jeebies check skipped (language not English) -----------------------------☷")
+		} else {
+			t := jeebies()
+			pptr = append(pptr, t...)
+		}
 	}
 
 	// note: remaining words in sw are suspects.
